@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -24,8 +25,11 @@ import type { Tables } from "@/integrations/supabase/types";
 type Product = Tables<"products">;
 
 interface CartItem {
+  cartItemId: string;
   product: Product;
   quantity: number;
+  selectedAdditionals?: { name: string; price: number }[];
+  unitPrice: number;
 }
 
 // ─── Ticket de Dados para o Cupom ───────────────────────────────────────────
@@ -107,10 +111,15 @@ function Cupom({ ticket, printRef }: { ticket: SaleTicket; printRef: React.RefOb
           </div>
           <div className="flex justify-between text-[10px]">
             <span className="w-10">{fmtQty(item.quantity)}</span>
-            <span className="w-10">Und</span>
-            <span className="w-16 text-right">{fmt(item.product.price)}</span>
-            <span className="w-16 text-right font-semibold">{fmt(item.product.price * item.quantity)}</span>
+            <span className="w-10">{(item.product as any).unit ?? "Und"}</span>
+            <span className="w-16 text-right">{fmt(item.unitPrice)}</span>
+            <span className="w-16 text-right font-semibold">{fmt(item.unitPrice * item.quantity)}</span>
           </div>
+          {item.selectedAdditionals && item.selectedAdditionals.length > 0 && (
+            <div className="text-[9px] text-gray-600 pl-10 italic">
+              + {item.selectedAdditionals.map(a => a.name).join(", ")}
+            </div>
+          )}
         </div>
       ))}
 
@@ -247,6 +256,13 @@ export default function PDV() {
   const [lastTicket, setLastTicket] = useState<SaleTicket | null>(null);
   const [saleCounter, setSaleCounter] = useState(1);
 
+  // Modal de Produto (Peso e Adicionais)
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [productModalOpen, setProductModalOpen] = useState(false);
+  const [modalQty, setModalQty] = useState<number | string>(1);
+  const [modalPrice, setModalPrice] = useState<number | string>("");
+  const [selectedAdds, setSelectedAdds] = useState<any[]>([]);
+
   useEffect(() => { searchRef.current?.focus(); }, []);
 
   // Profile / store
@@ -319,34 +335,72 @@ export default function PDV() {
     );
   }, [products, search]);
 
+  // Additionals for modal
+  const { data: productAdditionals = [] } = useQuery({
+    queryKey: ["product_additionals_pdv", selectedProduct?.id],
+    enabled: !!selectedProduct && !!(selectedProduct as any).has_additionals,
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("product_additionals")
+        .select("*")
+        .eq("product_id", selectedProduct!.id)
+        .eq("active", true)
+        .order("created_at");
+      return (data || []) as any[];
+    }
+  });
+
   // Cart helpers
-  const addToCart = (product: Product) => {
+  const handleProductClick = (p: Product) => {
+    const hasAdds = (p as any).has_additionals;
+    const isWeight = (p as any).unit === "KG" || (p as any).unit === "G" || (p as any).unit === "L";
+    
+    if (hasAdds || isWeight) {
+      setSelectedProduct(p);
+      setModalQty(isWeight ? "" : 1);
+      setModalPrice(isWeight ? "" : p.price);
+      setSelectedAdds([]);
+      setProductModalOpen(true);
+    } else {
+      addToCart(p, 1, [], p.price);
+    }
+  };
+
+  const addToCart = (product: Product, quantity: number, adds: any[], unitPrice: number) => {
+    if (quantity <= 0) return;
+    
     setCart((prev) => {
-      const existing = prev.find((i) => i.product.id === product.id);
+      // Verifica se é o mesmo produto com os MESMOS adicionais para mesclar
+      const addsStr = JSON.stringify(adds);
+      const existing = prev.find((i) => i.product.id === product.id && JSON.stringify(i.selectedAdditionals) === addsStr);
+      
       if (existing) {
-        if (existing.quantity >= product.stock_display) {
+        if (existing.quantity + quantity > product.stock_display) {
           toast.error("Estoque insuficiente em exposição");
           return prev;
         }
         return prev.map((i) =>
-          i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
+          i.cartItemId === existing.cartItemId ? { ...i, quantity: i.quantity + quantity } : i
         );
       }
-      if (product.stock_display <= 0) {
-        toast.error("Produto sem estoque em exposição");
+      
+      if (quantity > product.stock_display) {
+        toast.error("Produto sem estoque suficiente em exposição");
         return prev;
       }
-      return [...prev, { product, quantity: 1 }];
+      
+      return [...prev, { cartItemId: Math.random().toString(36).substring(7), product, quantity, selectedAdditionals: adds, unitPrice }];
     });
     setSearch("");
     searchRef.current?.focus();
+    setProductModalOpen(false);
   };
 
-  const updateQty = (productId: string, delta: number) => {
+  const updateQty = (cartItemId: string, delta: number) => {
     setCart((prev) =>
       prev
         .map((i) => {
-          if (i.product.id !== productId) return i;
+          if (i.cartItemId !== cartItemId) return i;
           const newQty = i.quantity + delta;
           if (newQty > i.product.stock_display) {
             toast.error("Estoque insuficiente");
@@ -358,13 +412,13 @@ export default function PDV() {
     );
   };
 
-  const removeFromCart = (productId: string) =>
-    setCart((prev) => prev.filter((i) => i.product.id !== productId));
+  const removeFromCart = (cartItemId: string) =>
+    setCart((prev) => prev.filter((i) => i.cartItemId !== cartItemId));
 
   const clearCart = () => { setCart([]); setDiscount(0); };
 
   // Totals
-  const subtotal = cart.reduce((sum, i) => sum + i.product.price * i.quantity, 0);
+  const subtotal = cart.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
   const discountValue = discountType === "percent" ? subtotal * (discount / 100) : discount;
   const total = Math.max(0, subtotal - discountValue);
 
@@ -393,8 +447,8 @@ export default function PDV() {
         sale_id: sale.id,
         product_id: i.product.id,
         quantity: i.quantity,
-        unit_price: i.product.price,
-        subtotal: i.product.price * i.quantity,
+        unit_price: i.unitPrice,
+        subtotal: i.unitPrice * i.quantity,
       }));
       const { error: itemsError } = await supabase.from("sale_items").insert(items);
       if (itemsError) throw itemsError;
@@ -459,17 +513,25 @@ export default function PDV() {
               {filtered.map((p) => (
                 <button
                   key={p.id}
-                  onClick={() => addToCart(p)}
+                  onClick={() => handleProductClick(p)}
                   className="flex flex-col items-start p-3 rounded-lg border border-border bg-card hover:bg-accent/50 hover:border-primary/30 transition-colors text-left"
                 >
                   <span className="font-medium text-sm line-clamp-2">{p.name}</span>
-                  {p.barcode && (
-                    <span className="text-xs text-muted-foreground mt-0.5">{p.barcode}</span>
-                  )}
+                  <div className="flex gap-2">
+                    {p.barcode && (
+                      <span className="text-xs text-muted-foreground mt-0.5">{p.barcode}</span>
+                    )}
+                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                    {(p as any).unit && (p as any).unit !== "UN" && (
+                      <span className="text-[10px] text-blue-600 font-semibold mt-0.5">{(p as any).unit}</span>
+                    )}
+                  </div>
                   <div className="flex items-center justify-between w-full mt-2">
-                    <span className="text-sm font-bold text-primary">{formatCurrency(p.price)}</span>
+                    <span className="text-sm font-bold text-primary">
+                      {formatCurrency(p.price)}
+                    </span>
                     <Badge variant="secondary" className="text-xs">
-                      {p.stock_display} un
+                      {p.stock_display} {(p as any).unit ?? "un"}
                     </Badge>
                   </div>
                 </button>
@@ -511,28 +573,35 @@ export default function PDV() {
                 </div>
               ) : (
                 cart.map((item) => (
-                  <div key={item.product.id} className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{item.product.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatCurrency(item.product.price)} × {item.quantity}
-                      </p>
+                  <div key={item.cartItemId} className="flex flex-col gap-1 p-2 rounded-lg bg-muted/50">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{item.product.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatCurrency(item.unitPrice)} × {fmtQty(item.quantity)} {(item.product as any).unit ?? "un"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQty(item.cartItemId, -1)}>
+                          <Minus className="h-3 w-3" />
+                        </Button>
+                        <span className="w-8 text-center text-sm font-semibold">{fmtQty(item.quantity)}</span>
+                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQty(item.cartItemId, 1)}>
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeFromCart(item.cartItemId)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <span className="text-sm font-semibold w-20 text-right">
+                        {formatCurrency(item.unitPrice * item.quantity)}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQty(item.product.id, -1)}>
-                        <Minus className="h-3 w-3" />
-                      </Button>
-                      <span className="w-8 text-center text-sm font-semibold">{item.quantity}</span>
-                      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQty(item.product.id, 1)}>
-                        <Plus className="h-3 w-3" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeFromCart(item.product.id)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    <span className="text-sm font-semibold w-20 text-right">
-                      {formatCurrency(item.product.price * item.quantity)}
-                    </span>
+                    {item.selectedAdditionals && item.selectedAdditionals.length > 0 && (
+                      <div className="text-xs text-muted-foreground pl-1 border-l-2 border-border ml-1 mt-1">
+                        + {item.selectedAdditionals.map(a => a.name).join(", ")}
+                      </div>
+                    )}
                   </div>
                 ))
               )}
@@ -625,6 +694,134 @@ export default function PDV() {
         open={cupomOpen}
         onClose={() => setCupomOpen(false)}
       />
+
+      {/* Product Options Modal */}
+      <Dialog open={productModalOpen} onOpenChange={setProductModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl">{selectedProduct?.name}</DialogTitle>
+          </DialogHeader>
+
+          {selectedProduct && (
+            <div className="space-y-6 py-2">
+              {/* Peso / Quantidade */}
+              {((selectedProduct as any).unit === "KG" || (selectedProduct as any).unit === "G" || (selectedProduct as any).unit === "L") && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Quantidade ({(selectedProduct as any).unit})</Label>
+                    <Input
+                      type="number"
+                      step="0.001"
+                      min="0.001"
+                      className="text-lg h-12"
+                      value={modalQty}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setModalQty(val);
+                        if (val && !isNaN(Number(val))) {
+                          setModalPrice((Number(val) * selectedProduct.price).toFixed(2));
+                        } else {
+                          setModalPrice("");
+                        }
+                      }}
+                      placeholder={`Ex: 0.500`}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Valor (R$)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      className="text-lg h-12"
+                      value={modalPrice}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setModalPrice(val);
+                        if (val && !isNaN(Number(val)) && selectedProduct.price > 0) {
+                          setModalQty((Number(val) / selectedProduct.price).toFixed(3));
+                        } else {
+                          setModalQty("");
+                        }
+                      }}
+                      placeholder={`Ex: 20.00`}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Adicionais */}
+              {(selectedProduct as any).has_additionals && productAdditionals.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex justify-between items-end">
+                    <Label className="text-base">Acompanhamentos</Label>
+                    {(selectedProduct as any).max_additionals > 0 && (
+                      <Badge variant="outline" className="text-emerald-600 bg-emerald-50 border-emerald-200">
+                        Até {(selectedProduct as any).max_additionals} grátis
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="grid gap-2 max-h-60 overflow-y-auto pr-1">
+                    {productAdditionals.map((add) => {
+                      const isSelected = selectedAdds.some((a) => a.id === add.id);
+                      return (
+                        <div
+                          key={add.id}
+                          className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                            isSelected ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                          }`}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedAdds(selectedAdds.filter((a) => a.id !== add.id));
+                            } else {
+                              setSelectedAdds([...selectedAdds, add]);
+                            }
+                          }}
+                        >
+                          <span className={isSelected ? "font-semibold" : ""}>{add.name}</span>
+                          <span className="text-sm font-medium text-muted-foreground">
+                            {add.price > 0 ? `+ ${formatCurrency(add.price)}` : "Grátis"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Botão Salvar */}
+              <Button
+                className="w-full h-12 text-base"
+                onClick={() => {
+                  const qtyNum = parseFloat(modalQty as string);
+                  if (isNaN(qtyNum) || qtyNum <= 0) {
+                    toast.error("Informe uma quantidade/peso válido.");
+                    return;
+                  }
+                  
+                  // Calcula preço final com adicionais
+                  let extraPrice = 0;
+                  const maxFree = (selectedProduct as any).max_additionals || 0;
+                  // Ordena adicionais selecionados por preço (do mais barato pro mais caro)
+                  // Os mais baratos viram grátis até atingir o limite maxFree.
+                  const sortedAdds = [...selectedAdds].sort((a, b) => a.price - b.price);
+                  sortedAdds.forEach((add, idx) => {
+                    // Se estiver além do limite maxFree, cobra o valor
+                    if (idx >= maxFree) {
+                      extraPrice += add.price;
+                    }
+                  });
+
+                  const finalUnitPrice = selectedProduct.price + extraPrice;
+                  addToCart(selectedProduct, qtyNum, selectedAdds, finalUnitPrice);
+                }}
+              >
+                Adicionar ao Carrinho
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

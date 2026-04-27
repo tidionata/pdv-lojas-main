@@ -13,6 +13,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
@@ -59,6 +62,7 @@ export default function Products() {
   const [additionals, setAdditionals] = useState<ProductAdditional[]>([]);
   const [newAddName, setNewAddName] = useState("");
   const [newAddPrice, setNewAddPrice] = useState(0);
+  const [unit, setUnit] = useState("UN");
 
   // ── Profile ──────────────────────────────────────────────────────────────
   const { data: profile } = useQuery({
@@ -100,20 +104,18 @@ export default function Products() {
   });
 
 
-  // ── Additionals for editing product ──────────────────────────────────────
-  const { data: savedAdditionals = [] } = useQuery({
-    queryKey: ["product_additionals", editingId], enabled: !!editingId,
-    queryFn: async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await (supabase as any).from("product_additionals")
-        .select("*").eq("product_id", editingId).order("created_at");
-      return (data ?? []) as ProductAdditional[];
-    },
-  });
-
   // ── Upsert product + additionals ──────────────────────────────────────────
+  interface UpsertPayload {
+    product: Partial<TablesInsert<"products">>;
+    hasAdds: boolean;
+    maxAdds: number;
+    unitType: string;
+    adds: ProductAdditional[];
+  }
+
   const upsertMutation = useMutation({
-    mutationFn: async (product: Partial<TablesInsert<"products">>) => {
+    mutationFn: async (payload: UpsertPayload) => {
+      const { product, hasAdds, maxAdds, unitType, adds } = payload;
       let productId = editingId;
 
       try {
@@ -135,7 +137,17 @@ export default function Products() {
         const list = getOfflineProducts();
         if (editingId) {
           const idx = list.findIndex(p => p.id === editingId);
-          if (idx !== -1) list[idx] = { ...list[idx], ...(product as Product) };
+          if (idx !== -1) {
+            list[idx] = { ...list[idx], ...(product as Product) };
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (list[idx] as any).unit = unitType;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (list[idx] as any).has_additionals = hasAdds;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (list[idx] as any).max_additionals = maxAdds;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (list[idx] as any).additionals_data = adds;
+          }
         } else {
           const newProduct: Product = {
             ...(product as Product),
@@ -146,6 +158,14 @@ export default function Products() {
             category: product.category ?? null,
             description: product.description ?? null,
           };
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (newProduct as any).unit = unitType;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (newProduct as any).has_additionals = hasAdds;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (newProduct as any).max_additionals = maxAdds;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (newProduct as any).additionals_data = adds;
           productId = newProduct.id;
           list.push(newProduct);
         }
@@ -153,27 +173,32 @@ export default function Products() {
         return; // sucesso offline, sai sem erro
       }
 
-      // 2) Tenta salvar campos de adicionais (só funciona após migration)
-      if (productId) {
+      // 2) Tenta salvar campos de adicionais (só funciona após migration e se for UUID)
+      if (productId && !productId.startsWith("local-")) {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase as any).from("products")
-            .update({ has_additionals: hasAdditionals, max_additionals: maxAdditionals })
+          const { error } = await (supabase as any).from("products")
+            .update({ has_additionals: hasAdds, max_additionals: maxAdds, unit: unitType })
             .eq("id", productId);
-        } catch (_) { /* migration não rodada, ignora */ }
+          if (error) console.error("Erro update products extras:", error);
+        } catch (err) { console.error("Catch update products:", err); }
 
-        if (hasAdditionals) {
+        if (hasAdds) {
           try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            await (supabase as any).from("product_additionals").delete().eq("product_id", productId);
-            if (additionals.length > 0) {
-              const rows = additionals.map(a => ({
+            const { error: delErr } = await (supabase as any).from("product_additionals").delete().eq("product_id", productId);
+            if (delErr) console.error("Erro delete adds:", delErr);
+            
+            if (adds.length > 0) {
+              const rows = adds.map(a => ({
                 product_id: productId, store_id: storeId!, name: a.name, price: a.price, active: a.active,
               }));
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              await (supabase as any).from("product_additionals").insert(rows);
+              const { error: insErr } = await (supabase as any).from("product_additionals").insert(rows);
+              if (insErr) console.error("Erro insert adds:", insErr);
             }
-          } catch (_) { /* migration não rodada, ignora */ }
+          } catch (err) { console.error("Catch additionals:", err); }
+        } else {
+          try {
+             await (supabase as any).from("product_additionals").delete().eq("product_id", productId);
+          } catch (_) {}
         }
       }
     },
@@ -211,10 +236,11 @@ export default function Products() {
     setEditingId(null); setForm(emptyForm);
     setHasAdditionals(false); setMaxAdditionals(0); setAdditionals([]);
     setNewAddName(""); setNewAddPrice(0);
+    setUnit("UN");
     setDialogOpen(true);
   };
 
-  const openEdit = (p: Product) => {
+  const openEdit = async (p: Product) => {
     setEditingId(p.id);
     setForm({
       name: p.name, barcode: p.barcode, category: p.category, description: p.description,
@@ -228,21 +254,47 @@ export default function Products() {
     setHasAdditionals((p as any).has_additionals ?? false);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setMaxAdditionals((p as any).max_additionals ?? 0);
-    setAdditionals(savedAdditionals);
+    setAdditionals([]); 
     setNewAddName(""); setNewAddPrice(0);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setUnit((p as any).unit ?? "UN");
     setDialogOpen(true);
+
+    // Carrega os adicionais
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((p as any).additionals_data) {
+      // Se tiver dados salvos no localStorage (offline)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setAdditionals((p as any).additionals_data);
+    } else if (!p.id.startsWith("local-")) {
+      // Se for um ID válido do banco de dados
+      try {
+        const { data } = await (supabase as any).from("product_additionals")
+          .select("*").eq("product_id", p.id).order("created_at");
+        if (data) {
+          setAdditionals(data as ProductAdditional[]);
+        }
+      } catch (_) { /* ignora se falhar ou estiver offline */ }
+    }
   };
 
   const closeDialog = () => {
     setDialogOpen(false); setEditingId(null); setForm(emptyForm);
     setHasAdditionals(false); setMaxAdditionals(0); setAdditionals([]);
     setNewAddName(""); setNewAddPrice(0);
+    setUnit("UN");
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name?.trim()) { toast.error("Nome é obrigatório"); return; }
-    upsertMutation.mutate(form);
+    upsertMutation.mutate({
+      product: form,
+      hasAdds: hasAdditionals,
+      maxAdds: maxAdditionals,
+      unitType: unit,
+      adds: additionals,
+    });
   };
 
   const setField = (k: string, v: unknown) => setForm(p => ({ ...p, [k]: v }));
@@ -336,6 +388,10 @@ export default function Products() {
                         <div>
                           {p.name}
                           {p.barcode && <span className="block text-xs text-muted-foreground font-mono">{p.barcode}</span>}
+                          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                          {(p as any).unit && (p as any).unit !== "UN" && (
+                            <Badge variant="outline" className="mt-1 text-[10px] px-1 py-0 h-4">Vend. {(p as any).unit}</Badge>
+                          )}
                         </div>
                       </TableCell>
 
@@ -398,8 +454,8 @@ export default function Products() {
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1.5">
                 <Tag className="h-3.5 w-3.5" /> Identificação
               </p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="sm:col-span-2">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="sm:col-span-3">
                   <Label>Nome do Produto *</Label>
                   <Input value={form.name ?? ""} onChange={e => setField("name", e.target.value)} placeholder="Ex: Açaí 300ml, Camiseta Preta..." />
                 </div>
@@ -411,13 +467,27 @@ export default function Products() {
                   <Label>Categoria</Label>
                   <Input value={form.category ?? ""} onChange={e => setField("category", e.target.value)} placeholder="Ex: Açaí, Bebidas, Lanches..." />
                 </div>
-                <div className="sm:col-span-2">
+                <div>
+                  <Label>Vendido por</Label>
+                  <Select value={unit} onValueChange={setUnit}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Unidade (UN)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="UN">Unidade (UN)</SelectItem>
+                      <SelectItem value="KG">Quilo (KG)</SelectItem>
+                      <SelectItem value="G">Grama (g)</SelectItem>
+                      <SelectItem value="L">Litro (L)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="sm:col-span-3">
                   <Label>Descrição</Label>
                   <Textarea value={form.description ?? ""} onChange={e => setField("description", e.target.value)} placeholder="Detalhes que aparecem no cardápio online..." rows={2} />
                 </div>
 
                 {/* Foto do Produto (Cardápio Online) */}
-                <div className="sm:col-span-2">
+                <div className="sm:col-span-3">
                   <Label className="flex items-center gap-1.5">
                     <ImageIcon className="h-3.5 w-3.5 text-primary" />
                     Foto do Produto
@@ -517,10 +587,10 @@ export default function Products() {
                 <Switch checked={hasAdditionals} onCheckedChange={v => { setHasAdditionals(v); if (!v) { setAdditionals([]); setMaxAdditionals(0); } }} id="has-additionals" />
                 <div className="flex-1">
                   <Label htmlFor="has-additionals" className="cursor-pointer font-semibold text-sm">
-                    Item adicional
+                    Tem Opções / Adicionais / Acompanhamentos
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Permite selecionar extras no PDV (ex: Açaí → morango, chocolate, granola...)
+                    Permite selecionar extras no PDV (ex: Marmita → carnes, Açaí → morango, etc.)
                   </p>
                 </div>
                 {hasAdditionals && (
@@ -537,9 +607,9 @@ export default function Products() {
                   <div className="rounded-lg border bg-white overflow-hidden">
                     <div className="flex items-center gap-3 p-3">
                       <div className="flex-1">
-                        <Label className="font-semibold text-sm">Adicionais grátis inclusos</Label>
+                        <Label className="font-semibold text-sm">Adicionais/Acompanhamentos Grátis</Label>
                         <p className="text-xs text-muted-foreground">
-                          Quantos extras estão <strong>inclusos no preço</strong> do produto. <strong>0 = nenhum grátis</strong>
+                          Exemplo: "Até 3 carnes grátis". <strong>0 = nenhum grátis</strong> (todos são cobrados).
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -551,7 +621,7 @@ export default function Products() {
                     {maxAdditionals > 0 && (
                       <div className="bg-emerald-50 border-t border-emerald-100 px-3 py-2 text-xs text-emerald-700 flex items-center gap-1.5">
                         <CheckCircle className="h-3.5 w-3.5" />
-                        Os primeiros <strong>{maxAdditionals}</strong> adicionais escolhidos são <strong>grátis</strong>. Os demais cobram o preço individual de cada item.
+                        As primeiras <strong>{maxAdditionals}</strong> opções escolhidas são <strong>grátis</strong>. As demais cobram o preço de cada item extra.
                       </div>
                     )}
                     {maxAdditionals === 0 && (
@@ -566,7 +636,7 @@ export default function Products() {
                   <div className="space-y-2">
                     <Label className="text-sm font-semibold flex items-center gap-1.5">
                       <GripVertical className="h-4 w-4 text-muted-foreground" />
-                      Itens disponíveis para adicionar:
+                      Opções / Carnes / Itens disponíveis:
                     </Label>
 
                     {additionals.length === 0 ? (
@@ -600,9 +670,9 @@ export default function Products() {
                     {/* Add new */}
                     <div className="flex gap-2 items-end pt-1">
                       <div className="flex-1">
-                        <Label className="text-xs text-muted-foreground">Nome do adicional</Label>
+                        <Label className="text-xs text-muted-foreground">Nome da Opção/Carne/Adicional</Label>
                         <Input
-                          placeholder="Ex: Morango, Chocolate, Granola..."
+                          placeholder="Ex: Picanha, Morango, Média..."
                           value={newAddName}
                           onChange={e => setNewAddName(e.target.value)}
                           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addAdditional(); } }}

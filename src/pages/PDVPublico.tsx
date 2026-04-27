@@ -23,8 +23,11 @@ import {
 type Product = Tables<"products">;
 
 interface CartItem {
+    cartItemId: string;
     product: Product;
     quantity: number;
+    additionals: { name: string; price: number }[];
+    unitPrice: number;
 }
 
 interface SaleTicket {
@@ -103,16 +106,21 @@ function CupomModal({
                     </div>
                     <div className="border-t border-dashed border-black my-1" />
                     {ticket.items.map((item, idx) => (
-                        <div key={item.product.id} className="mb-1">
+                        <div key={item.cartItemId} className="mb-1">
                             <div className="flex justify-between text-[10px]">
                                 <span className="w-8">{String(idx + 1).padStart(3, "0")}</span>
                                 <span className="flex-1 truncate">{item.product.name}</span>
                             </div>
                             <div className="flex justify-between text-[10px]">
-                                <span className="w-12">{item.quantity} Und</span>
-                                <span>{fmt(item.product.price)}</span>
-                                <span className="font-bold">{fmt(item.product.price * item.quantity)}</span>
+                                <span className="w-12">{item.quantity} {(item.product as any).unit ?? "Und"}</span>
+                                <span>{fmt(item.unitPrice)}</span>
+                                <span className="font-bold">{fmt(item.unitPrice * item.quantity)}</span>
                             </div>
+                            {item.additionals && item.additionals.length > 0 && (
+                                <div className="text-[9px] text-gray-600 pl-8 italic">
+                                    + {item.additionals.map(a => a.name).join(", ")}
+                                </div>
+                            )}
                         </div>
                     ))}
                     <div className="border-t border-dashed border-black my-1" />
@@ -164,6 +172,13 @@ export default function PDVPublico() {
     const [saleCounter, setSaleCounter] = useState(1);
     const searchRef = useRef<HTMLInputElement>(null);
 
+    // Modal de Produto (Peso e Adicionais)
+    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [productModalOpen, setProductModalOpen] = useState(false);
+    const [modalQty, setModalQty] = useState<number | string>(1);
+    const [modalPrice, setModalPrice] = useState<number | string>("");
+    const [selectedAdds, setSelectedAdds] = useState<any[]>([]);
+
     useEffect(() => { searchRef.current?.focus(); }, []);
 
     // Store info
@@ -197,6 +212,21 @@ export default function PDVPublico() {
         },
     });
 
+    // Additionals
+    const { data: productAdditionals = [] } = useQuery({
+        queryKey: ["product_additionals_public_pdv", selectedProduct?.id],
+        enabled: !!selectedProduct && !!(selectedProduct as any).has_additionals,
+        queryFn: async () => {
+            const { data } = await (supabase as any)
+                .from("product_additionals")
+                .select("*")
+                .eq("product_id", selectedProduct!.id)
+                .eq("active", true)
+                .order("created_at");
+            return (data || []) as any[];
+        }
+    });
+
     const filtered = useMemo(() => {
         if (!search.trim()) return products;
         const q = search.toLowerCase();
@@ -209,32 +239,50 @@ export default function PDVPublico() {
     }, [products, search]);
 
     // Cart helpers
-    const addToCart = (product: Product) => {
+    const handleProductClick = (p: Product) => {
+        const hasAdds = (p as any).has_additionals;
+        const isWeight = (p as any).unit === "KG" || (p as any).unit === "G" || (p as any).unit === "L";
+        
+        if (hasAdds || isWeight) {
+            setSelectedProduct(p);
+            setModalQty(isWeight ? "" : 1);
+            setModalPrice(isWeight ? "" : p.price);
+            setSelectedAdds([]);
+            setProductModalOpen(true);
+        } else {
+            addToCart(p, 1, [], p.price);
+        }
+    };
+
+    const addToCart = (product: Product, quantity: number, adds: any[], unitPrice: number) => {
+        if (quantity <= 0) return;
         setCart((prev) => {
-            const existing = prev.find((i) => i.product.id === product.id);
+            const addsStr = JSON.stringify(adds);
+            const existing = prev.find((i) => i.product.id === product.id && JSON.stringify(i.additionals) === addsStr);
             if (existing) {
-                if (existing.quantity >= product.stock_display) {
+                if (existing.quantity + quantity > product.stock_display) {
                     toast.error("Estoque insuficiente");
                     return prev;
                 }
                 return prev.map((i) =>
-                    i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
+                    i.cartItemId === existing.cartItemId ? { ...i, quantity: i.quantity + quantity } : i
                 );
             }
-            if (product.stock_display <= 0) {
+            if (quantity > product.stock_display) {
                 toast.error("Produto sem estoque");
                 return prev;
             }
-            return [...prev, { product, quantity: 1 }];
+            return [...prev, { cartItemId: Math.random().toString(36).substring(7), product, quantity, additionals: adds, unitPrice }];
         });
+        setProductModalOpen(false);
         toast.success(`${product.name} adicionado!`, { duration: 1000 });
     };
 
-    const updateQty = (productId: string, delta: number) => {
+    const updateQty = (cartItemId: string, delta: number) => {
         setCart((prev) =>
             prev
                 .map((i) => {
-                    if (i.product.id !== productId) return i;
+                    if (i.cartItemId !== cartItemId) return i;
                     const newQty = i.quantity + delta;
                     if (newQty > i.product.stock_display) {
                         toast.error("Estoque insuficiente");
@@ -246,12 +294,12 @@ export default function PDVPublico() {
         );
     };
 
-    const removeFromCart = (productId: string) =>
-        setCart((prev) => prev.filter((i) => i.product.id !== productId));
+    const removeFromCart = (cartItemId: string) =>
+        setCart((prev) => prev.filter((i) => i.cartItemId !== cartItemId));
 
     const clearCart = () => { setCart([]); setDiscount(0); };
 
-    const subtotal = cart.reduce((sum, i) => sum + i.product.price * i.quantity, 0);
+    const subtotal = cart.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
     const discountValue = discountType === "percent" ? subtotal * (discount / 100) : discount;
     const total = Math.max(0, subtotal - discountValue);
     const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
@@ -290,8 +338,8 @@ export default function PDVPublico() {
                 sale_id: sale.id,
                 product_id: i.product.id,
                 quantity: i.quantity,
-                unit_price: i.product.price,
-                subtotal: i.product.price * i.quantity,
+                unit_price: i.unitPrice,
+                subtotal: i.unitPrice * i.quantity,
             }));
             const { error: itemsError } = await supabase.from("sale_items").insert(items);
             if (itemsError) throw itemsError;
@@ -433,7 +481,7 @@ export default function PDVPublico() {
                                         return (
                                             <button
                                                 key={p.id}
-                                                onClick={() => !outOfStock && addToCart(p)}
+                                                onClick={() => !outOfStock && handleProductClick(p)}
                                                 disabled={outOfStock}
                                                 className={`relative flex flex-col items-start p-3 rounded-xl border bg-white text-left transition-all shadow-sm
                           ${outOfStock
@@ -516,35 +564,42 @@ export default function PDVPublico() {
                                 </div>
                             ) : (
                                 cart.map((item) => (
-                                    <div key={item.product.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/40 border">
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium truncate">{item.product.name}</p>
-                                            <p className="text-xs text-muted-foreground">{fmt(item.product.price)} × {item.quantity}</p>
+                                    <div key={item.cartItemId} className="flex flex-col gap-1 p-3 rounded-lg bg-muted/40 border">
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium truncate">{item.product.name}</p>
+                                                <p className="text-xs text-muted-foreground">{fmt(item.unitPrice)} × {item.quantity} {(item.product as any).unit ?? "un"}</p>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => updateQty(item.cartItemId, -1)}
+                                                    className="h-7 w-7 rounded border flex items-center justify-center hover:bg-muted"
+                                                >
+                                                    <Minus className="h-3 w-3" />
+                                                </button>
+                                                <span className="w-8 text-center text-sm font-semibold">{item.quantity}</span>
+                                                <button
+                                                    onClick={() => updateQty(item.cartItemId, 1)}
+                                                    className="h-7 w-7 rounded border flex items-center justify-center hover:bg-muted"
+                                                >
+                                                    <Plus className="h-3 w-3" />
+                                                </button>
+                                                <button
+                                                    onClick={() => removeFromCart(item.cartItemId)}
+                                                    className="h-7 w-7 rounded flex items-center justify-center text-destructive hover:bg-red-50"
+                                                >
+                                                    <Trash2 className="h-3 w-3" />
+                                                </button>
+                                            </div>
+                                            <span className="text-sm font-bold w-20 text-right">
+                                                {fmt(item.unitPrice * item.quantity)}
+                                            </span>
                                         </div>
-                                        <div className="flex items-center gap-1">
-                                            <button
-                                                onClick={() => updateQty(item.product.id, -1)}
-                                                className="h-7 w-7 rounded border flex items-center justify-center hover:bg-muted"
-                                            >
-                                                <Minus className="h-3 w-3" />
-                                            </button>
-                                            <span className="w-8 text-center text-sm font-semibold">{item.quantity}</span>
-                                            <button
-                                                onClick={() => updateQty(item.product.id, 1)}
-                                                className="h-7 w-7 rounded border flex items-center justify-center hover:bg-muted"
-                                            >
-                                                <Plus className="h-3 w-3" />
-                                            </button>
-                                            <button
-                                                onClick={() => removeFromCart(item.product.id)}
-                                                className="h-7 w-7 rounded flex items-center justify-center text-destructive hover:bg-red-50"
-                                            >
-                                                <Trash2 className="h-3 w-3" />
-                                            </button>
-                                        </div>
-                                        <span className="text-sm font-bold w-20 text-right">
-                                            {fmt(item.product.price * item.quantity)}
-                                        </span>
+                                        {item.additionals && item.additionals.length > 0 && (
+                                            <div className="text-xs text-muted-foreground pl-1 border-l-2 border-border ml-1 mt-1">
+                                                + {item.additionals.map(a => a.name).join(", ")}
+                                            </div>
+                                        )}
                                     </div>
                                 ))
                             )}
@@ -636,6 +691,130 @@ export default function PDVPublico() {
                 open={cupomOpen}
                 onClose={() => setCupomOpen(false)}
             />
+
+            {/* Product Options Modal */}
+            {productModalOpen && selectedProduct && (
+                <Dialog open={productModalOpen} onOpenChange={setProductModalOpen}>
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                            <DialogTitle className="text-xl">{selectedProduct.name}</DialogTitle>
+                        </DialogHeader>
+
+                        <div className="space-y-6 py-2">
+                            {/* Peso / Quantidade */}
+                            {((selectedProduct as any).unit === "KG" || (selectedProduct as any).unit === "G" || (selectedProduct as any).unit === "L") && (
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">Quantidade ({(selectedProduct as any).unit})</label>
+                                        <Input
+                                            type="number"
+                                            step="0.001"
+                                            min="0.001"
+                                            className="text-lg h-12"
+                                            value={modalQty}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setModalQty(val);
+                                                if (val && !isNaN(Number(val))) {
+                                                    setModalPrice((Number(val) * selectedProduct.price).toFixed(2));
+                                                } else {
+                                                    setModalPrice("");
+                                                }
+                                            }}
+                                            placeholder={`Ex: 0.500`}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">Valor (R$)</label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            min="0.01"
+                                            className="text-lg h-12"
+                                            value={modalPrice}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setModalPrice(val);
+                                                if (val && !isNaN(Number(val)) && selectedProduct.price > 0) {
+                                                    setModalQty((Number(val) / selectedProduct.price).toFixed(3));
+                                                } else {
+                                                    setModalQty("");
+                                                }
+                                            }}
+                                            placeholder={`Ex: 20.00`}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Adicionais */}
+                            {(selectedProduct as any).has_additionals && productAdditionals.length > 0 && (
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-end">
+                                        <label className="text-sm font-medium">Acompanhamentos</label>
+                                        {(selectedProduct as any).max_additionals > 0 && (
+                                            <Badge variant="outline" className="text-emerald-600 bg-emerald-50 border-emerald-200">
+                                                Até {(selectedProduct as any).max_additionals} grátis
+                                            </Badge>
+                                        )}
+                                    </div>
+                                    <div className="grid gap-2 max-h-60 overflow-y-auto pr-1">
+                                        {productAdditionals.map((add) => {
+                                            const isSelected = selectedAdds.some((a) => a.id === add.id);
+                                            return (
+                                                <div
+                                                    key={add.id}
+                                                    className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                                                        isSelected ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                                                    }`}
+                                                    onClick={() => {
+                                                        if (isSelected) {
+                                                            setSelectedAdds(selectedAdds.filter((a) => a.id !== add.id));
+                                                        } else {
+                                                            setSelectedAdds([...selectedAdds, add]);
+                                                        }
+                                                    }}
+                                                >
+                                                    <span className={isSelected ? "font-semibold" : ""}>{add.name}</span>
+                                                    <span className="text-sm font-medium text-muted-foreground">
+                                                        {add.price > 0 ? `+ ${fmt(add.price)}` : "Grátis"}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Botão Salvar */}
+                            <Button
+                                className="w-full h-12 text-base mt-4"
+                                onClick={() => {
+                                    const qtyNum = parseFloat(modalQty as string);
+                                    if (isNaN(qtyNum) || qtyNum <= 0) {
+                                        toast.error("Informe uma quantidade/peso válido.");
+                                        return;
+                                    }
+                                    
+                                    let extraPrice = 0;
+                                    const maxFree = (selectedProduct as any).max_additionals || 0;
+                                    const sortedAdds = [...selectedAdds].sort((a, b) => a.price - b.price);
+                                    sortedAdds.forEach((add, idx) => {
+                                        if (idx >= maxFree) {
+                                            extraPrice += add.price;
+                                        }
+                                    });
+
+                                    const finalUnitPrice = selectedProduct.price + extraPrice;
+                                    addToCart(selectedProduct, qtyNum, selectedAdds, finalUnitPrice);
+                                }}
+                            >
+                                Adicionar ao Carrinho
+                            </Button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
         </div>
     );
 }

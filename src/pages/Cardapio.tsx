@@ -17,9 +17,11 @@ import type { Tables } from "@/integrations/supabase/types";
 type Product = Tables<"products">;
 
 interface CartItem {
+  cartItemId: string;
   product: Product;
   quantity: number;
   additionals: { name: string; price: number }[];
+  unitPrice: number;
 }
 
 const fmt = (v: number) =>
@@ -47,6 +49,13 @@ export default function Cardapio() {
   const [notes, setNotes] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // Modal de Produto (Peso e Adicionais)
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [productModalOpen, setProductModalOpen] = useState(false);
+  const [modalQty, setModalQty] = useState<number | string>(1);
+  const [modalPrice, setModalPrice] = useState<number | string>("");
+  const [selectedAdds, setSelectedAdds] = useState<any[]>([]);
 
   useEffect(() => { searchRef.current?.focus(); }, []);
 
@@ -82,6 +91,21 @@ export default function Cardapio() {
     },
   });
 
+  // Adicionais para modal
+  const { data: productAdditionals = [] } = useQuery({
+    queryKey: ["product_additionals_cardapio", selectedProduct?.id],
+    enabled: !!selectedProduct && !!(selectedProduct as any).has_additionals,
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("product_additionals")
+        .select("*")
+        .eq("product_id", selectedProduct!.id)
+        .eq("active", true)
+        .order("created_at");
+      return (data || []) as any[];
+    }
+  });
+
   // Agrupado por categoria
   const categories = useMemo(() => {
     const filtered = search.trim()
@@ -102,28 +126,43 @@ export default function Cardapio() {
 
   // Cart helpers
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
-  const cartTotal = cart.reduce((s, i) => {
-    const addPrice = i.additionals.reduce((a, x) => a + x.price, 0);
-    return s + (i.product.price + addPrice) * i.quantity;
-  }, 0);
+  const cartTotal = cart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
 
-  const addToCart = (product: Product) => {
+  const handleProductClick = (p: Product) => {
+    const hasAdds = (p as any).has_additionals;
+    const isWeight = (p as any).unit === "KG" || (p as any).unit === "G" || (p as any).unit === "L";
+    
+    if (hasAdds || isWeight) {
+      setSelectedProduct(p);
+      setModalQty(isWeight ? "" : 1);
+      setModalPrice(isWeight ? "" : p.price);
+      setSelectedAdds([]);
+      setProductModalOpen(true);
+    } else {
+      addToCart(p, 1, [], p.price);
+    }
+  };
+
+  const addToCart = (product: Product, quantity: number, adds: any[], unitPrice: number) => {
+    if (quantity <= 0) return;
     setCart(prev => {
-      const ex = prev.find(i => i.product.id === product.id && i.additionals.length === 0);
-      if (ex) return prev.map(i => i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...prev, { product, quantity: 1, additionals: [] }];
+      const addsStr = JSON.stringify(adds);
+      const ex = prev.find(i => i.product.id === product.id && JSON.stringify(i.additionals) === addsStr);
+      if (ex) return prev.map(i => i.cartItemId === ex.cartItemId ? { ...i, quantity: i.quantity + quantity } : i);
+      return [...prev, { cartItemId: Math.random().toString(36).substring(7), product, quantity, additionals: adds, unitPrice }];
     });
+    setProductModalOpen(false);
     toast.success(`${product.name} adicionado!`, { duration: 800 });
   };
 
-  const updateQty = (productId: string, delta: number) => {
-    setCart(prev => prev.map(i => i.product.id === productId
+  const updateQty = (cartItemId: string, delta: number) => {
+    setCart(prev => prev.map(i => i.cartItemId === cartItemId
       ? { ...i, quantity: i.quantity + delta }
       : i).filter(i => i.quantity > 0));
   };
 
-  const removeFromCart = (productId: string) =>
-    setCart(prev => prev.filter(i => i.product.id !== productId));
+  const removeFromCart = (cartItemId: string) =>
+    setCart(prev => prev.filter(i => i.cartItemId !== cartItemId));
 
   // Enviar pedido
   const orderMutation = useMutation({
@@ -151,10 +190,10 @@ export default function Cardapio() {
           order_id: order.id,
           product_id: i.product.id,
           product_name: i.product.name,
-          unit_price: i.product.price,
+          unit_price: i.unitPrice,
           quantity: i.quantity,
           additionals: i.additionals,
-          subtotal: (i.product.price + i.additionals.reduce((s, a) => s + a.price, 0)) * i.quantity,
+          subtotal: i.unitPrice * i.quantity,
         }));
         await (supabase as any).from("order_items").insert(items);
         return order.id as string;
@@ -174,8 +213,8 @@ export default function Cardapio() {
           items: cart.map(i => ({
             product_name: i.product.name,
             quantity: i.quantity,
-            unit_price: i.product.price,
-            subtotal: i.product.price * i.quantity,
+            unit_price: i.unitPrice,
+            subtotal: i.unitPrice * i.quantity,
             additionals: i.additionals,
           })),
         };
@@ -304,7 +343,7 @@ export default function Cardapio() {
                                 </button>
                               </div>
                             ) : (
-                              <button onClick={() => addToCart(p)}
+                              <button onClick={() => handleProductClick(p)}
                                 className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 transition-colors shadow-sm">
                                 <Plus className="h-4 w-4" />
                               </button>
@@ -370,29 +409,36 @@ export default function Cardapio() {
                   <p className="text-sm">Nenhum item adicionado</p>
                 </div>
               ) : cart.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-3 p-3 rounded-lg bg-muted/40 border">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">{item.product.name}</p>
-                    <p className="text-xs text-muted-foreground">{fmt(item.product.price)} × {item.quantity}</p>
+                <div key={item.cartItemId} className="flex flex-col gap-1 p-3 rounded-lg bg-muted/40 border">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{item.product.name}</p>
+                      <p className="text-xs text-muted-foreground">{fmt(item.unitPrice)} × {item.quantity} {(item.product as any).unit ?? "un"}</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => updateQty(item.cartItemId, -1)}
+                        className="h-7 w-7 rounded border flex items-center justify-center hover:bg-muted">
+                        <Minus className="h-3 w-3" />
+                      </button>
+                      <span className="w-7 text-center text-sm font-semibold">{item.quantity}</span>
+                      <button onClick={() => updateQty(item.cartItemId, 1)}
+                        className="h-7 w-7 rounded border flex items-center justify-center hover:bg-muted">
+                        <Plus className="h-3 w-3" />
+                      </button>
+                      <button onClick={() => removeFromCart(item.cartItemId)}
+                        className="h-7 w-7 rounded flex items-center justify-center text-destructive hover:bg-red-50">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                    <span className="text-sm font-bold w-16 text-right">
+                      {fmt(item.unitPrice * item.quantity)}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => updateQty(item.product.id, -1)}
-                      className="h-7 w-7 rounded border flex items-center justify-center hover:bg-muted">
-                      <Minus className="h-3 w-3" />
-                    </button>
-                    <span className="w-7 text-center text-sm font-semibold">{item.quantity}</span>
-                    <button onClick={() => updateQty(item.product.id, 1)}
-                      className="h-7 w-7 rounded border flex items-center justify-center hover:bg-muted">
-                      <Plus className="h-3 w-3" />
-                    </button>
-                    <button onClick={() => removeFromCart(item.product.id)}
-                      className="h-7 w-7 rounded flex items-center justify-center text-destructive hover:bg-red-50">
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </div>
-                  <span className="text-sm font-bold w-16 text-right">
-                    {fmt(item.product.price * item.quantity)}
-                  </span>
+                  {item.additionals && item.additionals.length > 0 && (
+                    <div className="text-xs text-muted-foreground pl-1 border-l-2 border-border ml-1 mt-1">
+                      + {item.additionals.map(a => a.name).join(", ")}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -428,9 +474,16 @@ export default function Cardapio() {
                 {/* Resumo */}
                 <div className="bg-muted/40 rounded-xl p-3 space-y-1">
                   {cart.map((item, idx) => (
-                    <div key={idx} className="flex justify-between text-sm">
-                      <span>{item.quantity}x {item.product.name}</span>
-                      <span className="font-medium">{fmt(item.product.price * item.quantity)}</span>
+                    <div key={item.cartItemId} className="flex flex-col text-sm border-b border-border/50 pb-1 mb-1 last:border-0 last:pb-0 last:mb-0">
+                      <div className="flex justify-between">
+                        <span>{item.quantity}x {item.product.name}</span>
+                        <span className="font-medium">{fmt(item.unitPrice * item.quantity)}</span>
+                      </div>
+                      {item.additionals && item.additionals.length > 0 && (
+                        <span className="text-[10px] text-muted-foreground ml-4">
+                          + {item.additionals.map(a => a.name).join(", ")}
+                        </span>
+                      )}
                     </div>
                   ))}
                   <div className="border-t pt-1 mt-1 flex justify-between font-bold">
@@ -486,6 +539,135 @@ export default function Cardapio() {
                       Enviando...
                     </span>
                   ) : "Enviar Pedido 🚀"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Product Options Modal */}
+      {productModalOpen && selectedProduct && (
+        <>
+          <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-4" onClick={() => setProductModalOpen(false)}>
+            <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-5 border-b">
+                <h2 className="font-bold text-lg">{selectedProduct.name}</h2>
+                <button onClick={() => setProductModalOpen(false)} className="p-1 rounded hover:bg-muted">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-6 max-h-[70vh] overflow-y-auto">
+                {/* Peso / Quantidade */}
+                {((selectedProduct as any).unit === "KG" || (selectedProduct as any).unit === "G" || (selectedProduct as any).unit === "L") && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Quantidade ({(selectedProduct as any).unit})</label>
+                      <Input
+                        type="number"
+                        step="0.001"
+                        min="0.001"
+                        className="text-lg h-12"
+                        value={modalQty}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setModalQty(val);
+                          if (val && !isNaN(Number(val))) {
+                            setModalPrice((Number(val) * selectedProduct.price).toFixed(2));
+                          } else {
+                            setModalPrice("");
+                          }
+                        }}
+                        placeholder={`Ex: 0.500`}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Valor (R$)</label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        className="text-lg h-12"
+                        value={modalPrice}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setModalPrice(val);
+                          if (val && !isNaN(Number(val)) && selectedProduct.price > 0) {
+                            setModalQty((Number(val) / selectedProduct.price).toFixed(3));
+                          } else {
+                            setModalQty("");
+                          }
+                        }}
+                        placeholder={`Ex: 20.00`}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Adicionais */}
+                {(selectedProduct as any).has_additionals && productAdditionals.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-end">
+                      <label className="text-sm font-medium">Acompanhamentos</label>
+                      {(selectedProduct as any).max_additionals > 0 && (
+                        <Badge variant="outline" className="text-emerald-600 bg-emerald-50 border-emerald-200">
+                          Até {(selectedProduct as any).max_additionals} grátis
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="grid gap-2">
+                      {productAdditionals.map((add) => {
+                        const isSelected = selectedAdds.some((a) => a.id === add.id);
+                        return (
+                          <div
+                            key={add.id}
+                            className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                              isSelected ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                            }`}
+                            onClick={() => {
+                              if (isSelected) {
+                                setSelectedAdds(selectedAdds.filter((a) => a.id !== add.id));
+                              } else {
+                                setSelectedAdds([...selectedAdds, add]);
+                              }
+                            }}
+                          >
+                            <span className={isSelected ? "font-semibold" : ""}>{add.name}</span>
+                            <span className="text-sm font-medium text-muted-foreground">
+                              {add.price > 0 ? `+ ${fmt(add.price)}` : "Grátis"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Botão Salvar */}
+                <Button
+                  className="w-full h-12 text-base mt-4"
+                  onClick={() => {
+                    const qtyNum = parseFloat(modalQty as string);
+                    if (isNaN(qtyNum) || qtyNum <= 0) {
+                      toast.error("Informe uma quantidade/peso válido.");
+                      return;
+                    }
+                    
+                    let extraPrice = 0;
+                    const maxFree = (selectedProduct as any).max_additionals || 0;
+                    const sortedAdds = [...selectedAdds].sort((a, b) => a.price - b.price);
+                    sortedAdds.forEach((add, idx) => {
+                      if (idx >= maxFree) {
+                        extraPrice += add.price;
+                      }
+                    });
+
+                    const finalUnitPrice = selectedProduct.price + extraPrice;
+                    addToCart(selectedProduct, qtyNum, selectedAdds, finalUnitPrice);
+                  }}
+                >
+                  Adicionar ao Carrinho
                 </Button>
               </div>
             </div>
