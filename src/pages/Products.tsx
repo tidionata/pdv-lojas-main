@@ -1,0 +1,670 @@
+import { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
+} from "@/components/ui/dialog";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { toast } from "sonner";
+import {
+  Plus, Pencil, Trash2, Search, Package, Settings2,
+  Tag, DollarSign, Boxes, ScanBarcode, List,
+  CirclePlus, GripVertical, CheckCircle, ImageIcon, Link,
+} from "lucide-react";
+
+import type { Tables, TablesInsert } from "@/integrations/supabase/types";
+
+type Product = Tables<"products">;
+
+type ProductAdditional = {
+  id?: string;
+  product_id?: string;
+  store_id?: string;
+  name: string;
+  price: number;
+  active: boolean;
+};
+
+const emptyForm: Partial<TablesInsert<"products">> & { image_url?: string } = {
+  name: "", barcode: "", category: "", description: "", image_url: "",
+  cost: 0, price: 0, stock_total: 0, stock_display: 0, min_display_stock: 0, active: true,
+};
+
+
+const fmt = (v: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+
+export default function Products() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  const [search, setSearch] = useState("");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
+
+  // ── Additionals state ────────────────────────────────────────────────────
+  const [hasAdditionals, setHasAdditionals] = useState(false);
+  const [maxAdditionals, setMaxAdditionals] = useState(0);
+  const [additionals, setAdditionals] = useState<ProductAdditional[]>([]);
+  const [newAddName, setNewAddName] = useState("");
+  const [newAddPrice, setNewAddPrice] = useState(0);
+
+  // ── Profile ──────────────────────────────────────────────────────────────
+  const { data: profile } = useQuery({
+    queryKey: ["profile", user?.id], enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("profiles")
+        .select("store_id").eq("auth_user_id", user!.id).single();
+      if (error) throw error;
+      return data;
+    },
+  });
+  // Usa store_id do perfil ou, em modo de teste (sem Supabase), usa o próprio user.id
+  const storeId = profile?.store_id ?? user?.id ?? "test-store";
+
+
+  // ── Produtos (com fallback offline em localStorage) ──────────────────────
+  const OFFLINE_KEY = `products_offline_${storeId}`;
+
+  const getOfflineProducts = (): Product[] => {
+    try { return JSON.parse(localStorage.getItem(OFFLINE_KEY) || "[]"); } catch { return []; }
+  };
+  const saveOfflineProducts = (list: Product[]) => {
+    localStorage.setItem(OFFLINE_KEY, JSON.stringify(list));
+  };
+
+  const { data: products = [], isLoading } = useQuery({
+    queryKey: ["products", storeId],
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase.from("products")
+          .select("*").eq("store_id", storeId!).order("name");
+        if (error) throw error;
+        return data as Product[];
+      } catch {
+        // Supabase offline → usa cache local
+        return getOfflineProducts();
+      }
+    },
+  });
+
+
+  // ── Additionals for editing product ──────────────────────────────────────
+  const { data: savedAdditionals = [] } = useQuery({
+    queryKey: ["product_additionals", editingId], enabled: !!editingId,
+    queryFn: async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase as any).from("product_additionals")
+        .select("*").eq("product_id", editingId).order("created_at");
+      return (data ?? []) as ProductAdditional[];
+    },
+  });
+
+  // ── Upsert product + additionals ──────────────────────────────────────────
+  const upsertMutation = useMutation({
+    mutationFn: async (product: Partial<TablesInsert<"products">>) => {
+      let productId = editingId;
+
+      try {
+        // ── Tenta Supabase primeiro ──────────────────────────────────────
+        if (editingId) {
+          const { error } = await supabase.from("products")
+            .update({ ...product, store_id: storeId! })
+            .eq("id", editingId);
+          if (error) throw error;
+        } else {
+          const { data, error } = await supabase.from("products")
+            .insert({ ...product, store_id: storeId! } as TablesInsert<"products">)
+            .select("id").single();
+          if (error) throw error;
+          productId = data.id;
+        }
+      } catch {
+        // ── Supabase offline → salva em localStorage ─────────────────────
+        const list = getOfflineProducts();
+        if (editingId) {
+          const idx = list.findIndex(p => p.id === editingId);
+          if (idx !== -1) list[idx] = { ...list[idx], ...(product as Product) };
+        } else {
+          const newProduct: Product = {
+            ...(product as Product),
+            id: `local-${Date.now()}`,
+            store_id: storeId!,
+            created_at: new Date().toISOString(),
+            barcode: product.barcode ?? null,
+            category: product.category ?? null,
+            description: product.description ?? null,
+          };
+          productId = newProduct.id;
+          list.push(newProduct);
+        }
+        saveOfflineProducts(list);
+        return; // sucesso offline, sai sem erro
+      }
+
+      // 2) Tenta salvar campos de adicionais (só funciona após migration)
+      if (productId) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase as any).from("products")
+            .update({ has_additionals: hasAdditionals, max_additionals: maxAdditionals })
+            .eq("id", productId);
+        } catch (_) { /* migration não rodada, ignora */ }
+
+        if (hasAdditionals) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabase as any).from("product_additionals").delete().eq("product_id", productId);
+            if (additionals.length > 0) {
+              const rows = additionals.map(a => ({
+                product_id: productId, store_id: storeId!, name: a.name, price: a.price, active: a.active,
+              }));
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              await (supabase as any).from("product_additionals").insert(rows);
+            }
+          } catch (_) { /* migration não rodada, ignora */ }
+        }
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["product_additionals"] });
+      toast.success(editingId ? "Produto atualizado!" : "Produto criado!");
+      closeDialog();
+    },
+    onError: (e: Error) => toast.error("Erro: " + e.message),
+  });
+
+  // ── Delete ────────────────────────────────────────────────────────────────
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      try {
+        const { error } = await supabase.from("products").delete().eq("id", id);
+        if (error) throw error;
+      } catch {
+        // offline → remove do localStorage
+        const list = getOfflineProducts().filter(p => p.id !== id);
+        saveOfflineProducts(list);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast.success("Produto removido!");
+    },
+    onError: (e: Error) => toast.error("Erro: " + e.message),
+  });
+
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const openNew = () => {
+    setEditingId(null); setForm(emptyForm);
+    setHasAdditionals(false); setMaxAdditionals(0); setAdditionals([]);
+    setNewAddName(""); setNewAddPrice(0);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (p: Product) => {
+    setEditingId(p.id);
+    setForm({
+      name: p.name, barcode: p.barcode, category: p.category, description: p.description,
+      cost: p.cost, price: p.price, stock_total: p.stock_total, stock_display: p.stock_display,
+      min_display_stock: p.min_display_stock, active: p.active,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      image_url: (p as any).image_url ?? "",
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setHasAdditionals((p as any).has_additionals ?? false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setMaxAdditionals((p as any).max_additionals ?? 0);
+    setAdditionals(savedAdditionals);
+    setNewAddName(""); setNewAddPrice(0);
+    setDialogOpen(true);
+  };
+
+  const closeDialog = () => {
+    setDialogOpen(false); setEditingId(null); setForm(emptyForm);
+    setHasAdditionals(false); setMaxAdditionals(0); setAdditionals([]);
+    setNewAddName(""); setNewAddPrice(0);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name?.trim()) { toast.error("Nome é obrigatório"); return; }
+    upsertMutation.mutate(form);
+  };
+
+  const setField = (k: string, v: unknown) => setForm(p => ({ ...p, [k]: v }));
+
+  const addAdditional = () => {
+    if (!newAddName.trim()) { toast.error("Nome do adicional é obrigatório"); return; }
+    setAdditionals(prev => [...prev, { name: newAddName.trim(), price: newAddPrice, active: true }]);
+    setNewAddName(""); setNewAddPrice(0);
+  };
+
+  const removeAdditional = (i: number) => setAdditionals(p => p.filter((_, idx) => idx !== i));
+  const toggleAdditional = (i: number) => setAdditionals(p => p.map((a, idx) => idx === i ? { ...a, active: !a.active } : a));
+
+  // ── Filter ────────────────────────────────────────────────────────────────
+  const filtered = useMemo(() =>
+    products.filter(p =>
+      p.name.toLowerCase().includes(search.toLowerCase()) ||
+      p.barcode?.toLowerCase().includes(search.toLowerCase()) ||
+      p.category?.toLowerCase().includes(search.toLowerCase())
+    ), [products, search]);
+
+  // ── Margin calc ───────────────────────────────────────────────────────────
+  const margin = form.cost && form.cost > 0 && form.price && form.price > 0
+    ? `${(((form.price - form.cost) / form.cost) * 100).toFixed(1)}%`
+    : "—";
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  return (
+    <div className="space-y-6">
+
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold font-['Space_Grotesk']">Produtos</h1>
+          <p className="text-muted-foreground text-sm">{products.length} produtos cadastrados</p>
+        </div>
+        <Button onClick={openNew}><Plus className="h-4 w-4 mr-2" /> Novo Produto</Button>
+      </div>
+
+      {/* ── Search ─────────────────────────────────────────────────────── */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input placeholder="Buscar por nome, código ou categoria..." value={search}
+          onChange={e => setSearch(e.target.value)} className="pl-10" />
+      </div>
+
+      {/* ── Table ──────────────────────────────────────────────────────── */}
+      <Card>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground">Carregando produtos...</div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
+              <Package className="h-10 w-10 opacity-30" />
+              <p>Nenhum produto encontrado</p>
+              <Button size="sm" variant="outline" onClick={openNew}><Plus className="h-4 w-4 mr-1" /> Cadastrar produto</Button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/40">
+                    <TableHead className="w-10">Foto</TableHead>
+                    <TableHead>Nome</TableHead>
+                    <TableHead className="hidden sm:table-cell">Categoria</TableHead>
+                    <TableHead className="text-right">Custo</TableHead>
+                    <TableHead className="text-right">Preço</TableHead>
+                    <TableHead className="text-right hidden md:table-cell">Estoque</TableHead>
+                    <TableHead className="text-center hidden lg:table-cell">Adicionais</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+
+                <TableBody>
+                  {filtered.map(p => (
+                    <TableRow key={p.id} className={!p.active ? "opacity-55" : ""}>
+                      {/* Foto miniatura */}
+                      <TableCell>
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {(p as any).image_url ? (
+                          <img src={(p as any).image_url} alt={p.name}
+                            className="h-10 w-10 rounded-lg object-cover border" />
+                        ) : (
+                          <div className="h-10 w-10 rounded-lg border bg-muted flex items-center justify-center">
+                            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <div>
+                          {p.name}
+                          {p.barcode && <span className="block text-xs text-muted-foreground font-mono">{p.barcode}</span>}
+                        </div>
+                      </TableCell>
+
+                      <TableCell className="hidden sm:table-cell">
+                        {p.category ? <Badge variant="secondary">{p.category}</Badge> : <span className="text-muted-foreground text-xs">—</span>}
+                      </TableCell>
+                      <TableCell className="text-right">{fmt(p.cost)}</TableCell>
+                      <TableCell className="text-right font-semibold">{fmt(p.price)}</TableCell>
+                      <TableCell className="text-right hidden md:table-cell">
+                        <span className={p.stock_display <= p.min_display_stock && p.stock_display > 0 ? "text-amber-600 font-semibold" : p.stock_display === 0 ? "text-red-500 font-semibold" : ""}>
+                          {p.stock_display}
+                        </span>
+                        <span className="text-muted-foreground text-xs">/{p.stock_total}</span>
+                      </TableCell>
+                      <TableCell className="text-center hidden lg:table-cell">
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {(p as any).has_additionals ? (
+                          <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50 gap-1">
+                            <List className="h-3 w-3" /> Sim
+                          </Badge>
+                        ) : <span className="text-muted-foreground text-xs">—</span>}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={p.active ? "default" : "secondary"}>{p.active ? "Ativo" : "Inativo"}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive"
+                            onClick={() => { if (confirm(`Remover "${p.name}"?`)) deleteMutation.mutate(p.id); }}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ══ DIALOG: Cadastrar / Editar ════════════════════════════════════ */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              {editingId ? "Editar Produto" : "Novo Produto"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+
+            {/* ── Identificação ─────────────────────────────────────── */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                <Tag className="h-3.5 w-3.5" /> Identificação
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <Label>Nome do Produto *</Label>
+                  <Input value={form.name ?? ""} onChange={e => setField("name", e.target.value)} placeholder="Ex: Açaí 300ml, Camiseta Preta..." />
+                </div>
+                <div>
+                  <Label className="flex items-center gap-1"><ScanBarcode className="h-3.5 w-3.5" /> Código de Barras</Label>
+                  <Input value={form.barcode ?? ""} onChange={e => setField("barcode", e.target.value)} placeholder="EAN-13 ou código interno" />
+                </div>
+                <div>
+                  <Label>Categoria</Label>
+                  <Input value={form.category ?? ""} onChange={e => setField("category", e.target.value)} placeholder="Ex: Açaí, Bebidas, Lanches..." />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label>Descrição</Label>
+                  <Textarea value={form.description ?? ""} onChange={e => setField("description", e.target.value)} placeholder="Detalhes que aparecem no cardápio online..." rows={2} />
+                </div>
+
+                {/* Foto do Produto (Cardápio Online) */}
+                <div className="sm:col-span-2">
+                  <Label className="flex items-center gap-1.5">
+                    <ImageIcon className="h-3.5 w-3.5 text-primary" />
+                    Foto do Produto
+                    <span className="text-xs font-normal text-muted-foreground ml-1">— aparece no cardápio online</span>
+                  </Label>
+                  <div className="flex gap-3 items-start mt-1.5">
+                    {/* Preview */}
+                    <div className="h-20 w-20 shrink-0 rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted flex items-center justify-center overflow-hidden">
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                      {(form as any).image_url ? (
+                        <img
+                          src={(form as any).image_url}
+                          alt="preview"
+                          className="h-full w-full object-cover"
+                          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                        />
+                      ) : (
+                        <ImageIcon className="h-7 w-7 text-muted-foreground/40" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-1 mb-1">
+                        <Link className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">Cole o link (URL) da imagem</span>
+                      </div>
+                      <Input
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        value={(form as any).image_url ?? ""}
+                        onChange={e => setField("image_url", e.target.value)}
+                        placeholder="https://exemplo.com/foto-produto.jpg"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Dica: faça upload em{" "}
+                        <a href="https://imgur.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">imgur.com</a>
+                        {" "}ou{" "}
+                        <a href="https://postimages.org" target="_blank" rel="noopener noreferrer" className="text-primary underline">postimages.org</a>
+                        {" "}e cole o link aqui.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* ── Preços ────────────────────────────────────────────── */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                <DollarSign className="h-3.5 w-3.5" /> Preços
+              </p>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <Label>Custo (R$)</Label>
+                  <Input type="number" step="0.01" min="0" value={form.cost ?? 0} onChange={e => setField("cost", parseFloat(e.target.value) || 0)} />
+                </div>
+                <div>
+                  <Label>Preço de Venda (R$)</Label>
+                  <Input type="number" step="0.01" min="0" value={form.price ?? 0} onChange={e => setField("price", parseFloat(e.target.value) || 0)} />
+                </div>
+                <div>
+                  <Label>Margem de Lucro</Label>
+                  <div className="h-10 flex items-center px-3 rounded-md border bg-muted text-sm font-semibold text-emerald-600">{margin}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Estoque ───────────────────────────────────────────── */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                <Boxes className="h-3.5 w-3.5" /> Estoque
+              </p>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <Label>Estoque Total</Label>
+                  <Input type="number" min="0" value={form.stock_total ?? 0} onChange={e => setField("stock_total", parseInt(e.target.value) || 0)} />
+                </div>
+                <div>
+                  <Label>Estoque Exposição</Label>
+                  <Input type="number" min="0" value={form.stock_display ?? 0} onChange={e => setField("stock_display", parseInt(e.target.value) || 0)} />
+                </div>
+                <div>
+                  <Label>Mínimo Exposição</Label>
+                  <Input type="number" min="0" value={form.min_display_stock ?? 0} onChange={e => setField("min_display_stock", parseInt(e.target.value) || 0)} />
+                  <p className="text-xs text-muted-foreground mt-0.5">Alerta abaixo deste valor</p>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Opções / Adicionais ───────────────────────────────── */}
+            <div className="rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/30 p-4 space-y-4">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <Settings2 className="h-3.5 w-3.5 text-blue-500" /> Opções / Adicionais
+              </p>
+
+              {/* Toggle: Item adicional */}
+              <div className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${hasAdditionals ? "bg-blue-50 border-blue-200" : "bg-white border-border"}`}>
+                <Switch checked={hasAdditionals} onCheckedChange={v => { setHasAdditionals(v); if (!v) { setAdditionals([]); setMaxAdditionals(0); } }} id="has-additionals" />
+                <div className="flex-1">
+                  <Label htmlFor="has-additionals" className="cursor-pointer font-semibold text-sm">
+                    Item adicional
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Permite selecionar extras no PDV (ex: Açaí → morango, chocolate, granola...)
+                  </p>
+                </div>
+                {hasAdditionals && (
+                  <Badge className="bg-blue-100 text-blue-700 border-blue-200" variant="outline">
+                    <List className="h-3 w-3 mr-1" /> Ativo
+                  </Badge>
+                )}
+              </div>
+
+              {hasAdditionals && (
+                <div className="space-y-4">
+
+                  {/* Adicionais grátis inclusos */}
+                  <div className="rounded-lg border bg-white overflow-hidden">
+                    <div className="flex items-center gap-3 p-3">
+                      <div className="flex-1">
+                        <Label className="font-semibold text-sm">Adicionais grátis inclusos</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Quantos extras estão <strong>inclusos no preço</strong> do produto. <strong>0 = nenhum grátis</strong>
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setMaxAdditionals(m => Math.max(0, m - 1))}>−</Button>
+                        <Input type="number" min="0" value={maxAdditionals} onChange={e => setMaxAdditionals(parseInt(e.target.value) || 0)} className="w-16 text-center font-bold" />
+                        <Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => setMaxAdditionals(m => m + 1)}>+</Button>
+                      </div>
+                    </div>
+                    {maxAdditionals > 0 && (
+                      <div className="bg-emerald-50 border-t border-emerald-100 px-3 py-2 text-xs text-emerald-700 flex items-center gap-1.5">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        Os primeiros <strong>{maxAdditionals}</strong> adicionais escolhidos são <strong>grátis</strong>. Os demais cobram o preço individual de cada item.
+                      </div>
+                    )}
+                    {maxAdditionals === 0 && (
+                      <div className="bg-amber-50 border-t border-amber-100 px-3 py-2 text-xs text-amber-700 flex items-center gap-1.5">
+                        <span>💡</span>
+                        Todos os adicionais escolhidos serão cobrados pelo preço individual.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Lista de adicionais configurados */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold flex items-center gap-1.5">
+                      <GripVertical className="h-4 w-4 text-muted-foreground" />
+                      Itens disponíveis para adicionar:
+                    </Label>
+
+                    {additionals.length === 0 ? (
+                      <div className="py-4 text-center border border-dashed rounded-lg text-sm text-muted-foreground">
+                        Nenhum adicional cadastrado ainda. Adicione abaixo ↓
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {additionals.map((a, i) => (
+                          <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg border bg-white transition-opacity ${!a.active ? "opacity-50" : ""}`}>
+                            <Switch checked={a.active} onCheckedChange={() => toggleAdditional(i)} className="scale-[0.8]" />
+                            <span className="flex-1 text-sm font-medium">{a.name}</span>
+                            <div className="flex items-center gap-1.5">
+                              {a.price > 0 ? (
+                                <span className="text-sm font-semibold text-orange-600">+{fmt(a.price)}</span>
+                              ) : (
+                                <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">Grátis</span>
+                              )}
+                              {a.price > 0 && (
+                                <span className="text-[10px] text-muted-foreground bg-orange-50 border border-orange-200 text-orange-600 px-1.5 py-0.5 rounded">pago</span>
+                              )}
+                            </div>
+                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive hover:bg-red-50" onClick={() => removeAdditional(i)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add new */}
+                    <div className="flex gap-2 items-end pt-1">
+                      <div className="flex-1">
+                        <Label className="text-xs text-muted-foreground">Nome do adicional</Label>
+                        <Input
+                          placeholder="Ex: Morango, Chocolate, Granola..."
+                          value={newAddName}
+                          onChange={e => setNewAddName(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addAdditional(); } }}
+                        />
+                      </div>
+                      <div className="w-28">
+                        <Label className="text-xs text-muted-foreground">Preço extra (R$)</Label>
+                        <Input
+                          type="number" step="0.01" min="0"
+                          placeholder="0,00"
+                          value={newAddPrice || ""}
+                          onChange={e => setNewAddPrice(parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <Button type="button" onClick={addAdditional} className="gap-1.5 bg-blue-600 hover:bg-blue-700">
+                        <CirclePlus className="h-4 w-4" /> Adicionar
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Summary */}
+                  {additionals.length > 0 && (
+                    <div className="text-xs bg-white rounded-lg border px-3 py-2 space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Adicionais ativos:</span>
+                        <strong>{additionals.filter(a => a.active).length} de {additionals.length}</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Grátis inclusos:</span>
+                        <strong className="text-emerald-600">{maxAdditionals === 0 ? "nenhum (todos pagos)" : `${maxAdditionals} primeiros`}</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Além do limite:</span>
+                        <strong className="text-orange-600">cobrado o preço individual</strong>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ── Status ────────────────────────────────────────────── */}
+            <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30">
+              <Switch checked={form.active ?? true} onCheckedChange={v => setField("active", v)} />
+              <div>
+                <p className="text-sm font-medium">{form.active ? "Produto Ativo" : "Produto Inativo"}</p>
+                <p className="text-xs text-muted-foreground">Produtos inativos não aparecem no PDV</p>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <DialogClose asChild>
+                <Button type="button" variant="outline" onClick={closeDialog}>Cancelar</Button>
+              </DialogClose>
+              <Button type="submit" disabled={upsertMutation.isPending}>
+                {upsertMutation.isPending ? "Salvando..." : editingId ? "Salvar Alterações" : "Cadastrar Produto"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+    </div>
+  );
+}
