@@ -217,6 +217,12 @@ export default function PDVPublico() {
         queryKey: ["product_additionals_public_pdv", selectedProduct?.id],
         enabled: !!selectedProduct && !!(selectedProduct as any).has_additionals,
         queryFn: async () => {
+            if ((selectedProduct as any).additionals_data) {
+                return (selectedProduct as any).additionals_data;
+            }
+            if (selectedProduct!.id.startsWith("local-")) {
+                return [];
+            }
             const { data } = await (supabase as any)
                 .from("product_additionals")
                 .select("*")
@@ -771,7 +777,12 @@ export default function PDVPublico() {
                                                         if (isSelected) {
                                                             setSelectedAdds(selectedAdds.filter((a) => a.id !== add.id));
                                                         } else {
-                                                            setSelectedAdds([...selectedAdds, add]);
+                                                            const maxFree = (selectedProduct as any).max_additionals || 0;
+                                                            if (maxFree > 0 && selectedAdds.length >= maxFree) {
+                                                                toast.error(`Você só pode escolher até ${maxFree} opção(ões).`);
+                                                            } else {
+                                                                setSelectedAdds([...selectedAdds, add]);
+                                                            }
                                                         }
                                                     }}
                                                 >

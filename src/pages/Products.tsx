@@ -609,7 +609,7 @@ export default function Products() {
                       <div className="flex-1">
                         <Label className="font-semibold text-sm">Adicionais/Acompanhamentos Grátis</Label>
                         <p className="text-xs text-muted-foreground">
-                          Exemplo: "Até 3 carnes grátis". <strong>0 = nenhum grátis</strong> (todos são cobrados).
+                          Exemplo: "Pode escolher até 3 carnes". <strong>0 = Sem limite</strong> (todos são cobrados).
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -621,7 +621,7 @@ export default function Products() {
                     {maxAdditionals > 0 && (
                       <div className="bg-emerald-50 border-t border-emerald-100 px-3 py-2 text-xs text-emerald-700 flex items-center gap-1.5">
                         <CheckCircle className="h-3.5 w-3.5" />
-                        As primeiras <strong>{maxAdditionals}</strong> opções escolhidas são <strong>grátis</strong>. As demais cobram o preço de cada item extra.
+                        O cliente só poderá escolher até <strong>{maxAdditionals}</strong> opção(ões) no total.
                       </div>
                     )}
                     {maxAdditionals === 0 && (
