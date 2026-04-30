@@ -50,9 +50,11 @@ export function useAuth() {
       localStorage.removeItem(TEST_USER_KEY);
       setUser(null);
       setSession(null);
+      window.location.replace("/auth");
       return;
     }
     await supabase.auth.signOut();
+    window.location.replace("/auth");
   };
 
   return { user, session, loading, signOut, TEST_EMAIL, TEST_PASSWORD };
