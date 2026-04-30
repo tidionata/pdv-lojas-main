@@ -46,15 +46,16 @@ export function useAuth() {
   }, []);
 
   const signOut = async () => {
+    // Limpa usuário de teste
     if (localStorage.getItem(TEST_USER_KEY) === "true") {
       localStorage.removeItem(TEST_USER_KEY);
-      setUser(null);
-      setSession(null);
-      window.location.replace("/auth");
-      return;
     }
-    await supabase.auth.signOut();
-    window.location.replace("/auth");
+    // Sempre tenta fazer logout no Supabase (ignora erros)
+    try {
+      await supabase.auth.signOut();
+    } catch (_) { /* ignora */ }
+    // Força navegação para login
+    window.location.href = "/auth";
   };
 
   return { user, session, loading, signOut, TEST_EMAIL, TEST_PASSWORD };
