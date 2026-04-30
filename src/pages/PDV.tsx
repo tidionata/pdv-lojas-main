@@ -284,6 +284,9 @@ export default function PDV() {
   const storeId = profile?.store_id ?? user?.id ?? "test-store";
   const profileId = profile?.id ?? user?.id;
 
+  const isValidUUID = (s?: string) =>
+    !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
 
   // Store info
   const { data: store } = useQuery({
@@ -433,8 +436,28 @@ export default function PDV() {
   // Finalize sale
   const saleMutation = useMutation({
     mutationFn: async () => {
-      if (!storeId || !profileId) throw new Error("Sem loja/perfil");
       if (cart.length === 0) throw new Error("Carrinho vazio");
+
+      // Se IDs não forem UUIDs válidos → salva offline
+      if (!isValidUUID(storeId) || !isValidUUID(profileId)) {
+        const offlineSale = {
+          id: `offline-${Date.now()}`,
+          store_id: storeId,
+          user_id: profileId,
+          total,
+          discount: discountValue,
+          discount_type: discountType,
+          payment_method: paymentMethod,
+          status: "completed",
+          created_at: new Date().toISOString(),
+          items: cart,
+        };
+        const key = `sales_offline_${storeId}`;
+        const prev = JSON.parse(localStorage.getItem(key) || "[]");
+        localStorage.setItem(key, JSON.stringify([...prev, offlineSale]));
+        toast.info("Venda salva localmente (modo offline)");
+        return offlineSale as any;
+      }
 
       const { data: sale, error: saleError } = await supabase
         .from("sales")
@@ -453,7 +476,7 @@ export default function PDV() {
 
       const items = cart.map((i) => ({
         sale_id: sale.id,
-        product_id: i.product.id,
+        product_id: isValidUUID(i.product.id) ? i.product.id : null,
         quantity: i.quantity,
         unit_price: i.unitPrice,
         subtotal: i.unitPrice * i.quantity,
@@ -763,15 +786,12 @@ export default function PDV() {
                 <div className="space-y-3">
                   <div className="flex justify-between items-end">
                     <Label className="text-base">Acompanhamentos</Label>
-                    {(selectedProduct as any).max_additionals > 0 && (
-                      <Badge variant="outline" className="text-emerald-600 bg-emerald-50 border-emerald-200">
-                        Até {(selectedProduct as any).max_additionals} grátis
-                      </Badge>
-                    )}
                   </div>
                   <div className="grid gap-2 max-h-60 overflow-y-auto pr-1">
                     {productAdditionals.map((add) => {
-                      const isSelected = selectedAdds.some((a) => a.id === add.id);
+                      const isSelected = selectedAdds.some((a) =>
+                        add.id ? a.id === add.id : a.name === add.name
+                      );
                       return (
                         <div
                           key={add.id}
@@ -780,20 +800,24 @@ export default function PDV() {
                           }`}
                           onClick={() => {
                             if (isSelected) {
-                              setSelectedAdds(selectedAdds.filter((a) => a.id !== add.id));
+                              setSelectedAdds(prev => prev.filter((a) =>
+                                add.id ? a.id !== add.id : a.name !== add.name
+                              ));
                             } else {
                               const maxFree = (selectedProduct as any).max_additionals || 0;
-                              if (maxFree > 0 && selectedAdds.length >= maxFree) {
-                                toast.error(`Você só pode escolher até ${maxFree} opção(ões).`);
-                              } else {
-                                setSelectedAdds([...selectedAdds, add]);
-                              }
+                              setSelectedAdds(prev => {
+                                if (maxFree > 0 && prev.length >= maxFree) {
+                                  toast.error(`Você só pode escolher até ${maxFree} opção(ões) grátis.`);
+                                  return prev;
+                                }
+                                return [...prev, add];
+                              });
                             }
                           }}
                         >
                           <span className={isSelected ? "font-semibold" : ""}>{add.name}</span>
                           <span className="text-sm font-medium text-muted-foreground">
-                            {add.price > 0 ? `+ ${formatCurrency(add.price)}` : "Grátis"}
+                            {add.price > 0 ? `+ ${formatCurrency(add.price)}` : ""}
                           </span>
                         </div>
                       );
@@ -812,18 +836,8 @@ export default function PDV() {
                     return;
                   }
                   
-                  // Calcula preço final com adicionais
-                  let extraPrice = 0;
-                  const maxFree = (selectedProduct as any).max_additionals || 0;
-                  // Ordena adicionais selecionados por preço (do mais barato pro mais caro)
-                  // Os mais baratos viram grátis até atingir o limite maxFree.
-                  const sortedAdds = [...selectedAdds].sort((a, b) => a.price - b.price);
-                  sortedAdds.forEach((add, idx) => {
-                    // Se estiver além do limite maxFree, cobra o valor
-                    if (idx >= maxFree) {
-                      extraPrice += add.price;
-                    }
-                  });
+                  // Calcula preço final: soma o preço de todos os adicionais selecionados
+                  const extraPrice = selectedAdds.reduce((sum: number, add: any) => sum + (add.price || 0), 0);
 
                   const finalUnitPrice = selectedProduct.price + extraPrice;
                   addToCart(selectedProduct, qtyNum, selectedAdds, finalUnitPrice);
