@@ -77,7 +77,7 @@ export default function Auth() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold text-primary font-['Space_Grotesk']">ExpoStock</CardTitle>
+          <CardTitle className="text-2xl font-bold text-primary font-['Space_Grotesk']">PdvTotal</CardTitle>
           <CardDescription>Gerencie seu expositor como um profissional</CardDescription>
         </CardHeader>
         <CardContent>

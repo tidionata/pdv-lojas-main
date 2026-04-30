@@ -63,7 +63,7 @@ export default function DashboardLayout() {
         )}
       >
         <div className="flex items-center justify-between h-16 px-6 border-b border-sidebar-border">
-          <span className="text-lg font-bold text-sidebar-primary font-['Space_Grotesk']">ExpoStock</span>
+          <span className="text-lg font-bold text-sidebar-primary font-['Space_Grotesk']">PDVTOTAL</span>
           <button className="lg:hidden text-sidebar-foreground" onClick={() => setSidebarOpen(false)}>
             <X className="h-5 w-5" />
           </button>

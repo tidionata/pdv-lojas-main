@@ -54,7 +54,7 @@ export default function Landing() {
       {/* Nav */}
       <nav className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-lg border-b border-border">
         <div className="container mx-auto flex items-center justify-between h-16 px-4">
-          <span className="text-xl font-bold font-['Space_Grotesk'] text-primary">ExpoStock</span>
+          <span className="text-xl font-bold font-['Space_Grotesk'] text-primary">PdvTotal</span>
           <div className="flex gap-3">
             <Button variant="ghost" asChild><Link to="/auth">Entrar</Link></Button>
             <Button asChild><Link to="/auth?tab=signup">Começar grátis</Link></Button>
@@ -209,7 +209,7 @@ export default function Landing() {
       {/* Footer */}
       <footer className="border-t border-border py-8 px-4">
         <div className="container mx-auto text-center text-sm text-muted-foreground">
-          © {new Date().getFullYear()} ExpoStock. Todos os direitos reservados.
+          © {new Date().getFullYear()} PdvTotal. Todos os direitos reservados.
         </div>
       </footer>
     </div>
