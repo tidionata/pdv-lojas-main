@@ -429,23 +429,18 @@ export default function PDV() {
     );
   };
 
-  const removeFromCart = (cartItemId: string) =>
-    setCart((prev) => prev.filter((i) => i.cartItemId !== cartItemId));
-
-  const clearCart = () => { setCart([]); setDiscount(0); };
-
-  // Totals
-  const subtotal = cart.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
-  const discountValue = discountType === "percent" ? subtotal * (discount / 100) : discount;
-  const total = Math.max(0, subtotal - discountValue);
-
   // Finalize sale
   const saleMutation = useMutation({
     mutationFn: async () => {
       if (cart.length === 0) throw new Error("Carrinho vazio");
 
-      // profileId pode ser null se o perfil ainda não carregou — a venda é registrada assim mesmo
-      // (sales.user_id é nullable desde a migration 20260501)
+      // Garante que o perfil foi carregado antes de inserir a venda
+      if (!profileId) {
+        throw new Error(
+          "Perfil do operador ainda n\u00e3o carregado. Aguarde um momento e tente novamente."
+        );
+      }
+
       if (!isValidUUID(storeId)) {
         const offlineSale = {
           id: `offline-${Date.now()}`,
@@ -470,7 +465,7 @@ export default function PDV() {
         .from("sales")
         .insert({
           store_id: storeId,
-          user_id: profileId,  // profiles.id (FK correta)
+          user_id: profileId,  // profiles.id — garantido não-nulo acima
           total,
           discount: discountValue,
           discount_type: discountType,
@@ -480,6 +475,7 @@ export default function PDV() {
         .select("id")
         .single();
       if (saleError) throw saleError;
+
 
       const items = cart.map((i) => ({
         sale_id: sale.id,
@@ -714,11 +710,14 @@ export default function PDV() {
                   size="lg"
                   className="w-full h-12 text-base"
                   onClick={() => saleMutation.mutate()}
-                  disabled={saleMutation.isPending || cart.length === 0}
+                  disabled={saleMutation.isPending || cart.length === 0 || profileLoading || !profileId}
                 >
-                  {saleMutation.isPending
+                  {profileLoading
+                    ? "Carregando perfil..."
+                    : saleMutation.isPending
                     ? "Finalizando..."
-                    : `Finalizar Venda — ${formatCurrency(total)}`}
+                    : `Finalizar Venda \u2014 ${formatCurrency(total)}`
+                  }
                 </Button>
               </>
             )}
