@@ -65,16 +65,31 @@ export default function SettingsPage() {
     },
   });
 
-  // ── Query: store (inclui nfe_config) ──────────────────────────────────────
+  // ── Query: store (dados públicos da loja) ────────────────────────────────
   const { data: store, isLoading: storeLoading } = useQuery({
     queryKey: ["store", profile?.store_id],
     enabled: !!profile?.store_id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("stores")
-        .select("id, name, nfe_config")
+        .select("id, name")
         .eq("id", profile!.store_id!)
         .single();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // ── Query: store_secrets (só o owner acessa — token NFe isolado) ────────────
+  const { data: secrets, isLoading: secretsLoading } = useQuery({
+    queryKey: ["store_secrets", profile?.store_id],
+    enabled: !!profile?.store_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("store_secrets")
+        .select("id, nfe_config")
+        .eq("store_id", profile!.store_id!)
+        .maybeSingle(); // pode não existir ainda (primeiro acesso)
       if (error) throw error;
       return data;
     },
@@ -86,19 +101,29 @@ export default function SettingsPage() {
     },
   });
 
-  // ── Mutation: salvar NFe config ─────────────────────────────────────────────
+  // ── Mutation: salvar NFe config em store_secrets ─────────────────────────────
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!store?.id) throw new Error("Loja não encontrada");
-      const { error } = await supabase
-        .from("stores")
-        .update({ nfe_config: nfe })
-        .eq("id", store.id);
-      if (error) throw error;
+
+      if (secrets?.id) {
+        // Atualiza registro existente
+        const { error } = await supabase
+          .from("store_secrets")
+          .update({ nfe_config: nfe })
+          .eq("id", secrets.id);
+        if (error) throw error;
+      } else {
+        // Cria novo registro
+        const { error } = await supabase
+          .from("store_secrets")
+          .insert({ store_id: store.id, nfe_config: nfe });
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["store"] });
-      toast.success("Configurações salvas!");
+      queryClient.invalidateQueries({ queryKey: ["store_secrets"] });
+      toast.success("Configurações salvas com segurança!");
     },
     onError: (e: any) => toast.error(`Erro ao salvar: ${e.message}`),
   });
@@ -377,11 +402,12 @@ export default function SettingsPage() {
               </Button>
 
               {/* Status salvo */}
-              {store && (store as any).nfe_config?.token && (
+              {secrets?.nfe_config && (secrets.nfe_config as NfeConfig).token && (
                 <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
                   <Shield className="h-3.5 w-3.5" />
-                  Token configurado — integração ativa em modo{" "}
-                  <strong>{(store as any).nfe_config?.ambiente === "producao" ? "Produção" : "Homologação"}</strong>
+                  Token configurado em modo{" "}
+                  <strong>{(secrets.nfe_config as NfeConfig).ambiente === "producao" ? "Produção" : "Homologação"}</strong>
+                  {" — "}⛔ isolado por RLS (só o owner acessa)
                 </div>
               )}
             </CardContent>
