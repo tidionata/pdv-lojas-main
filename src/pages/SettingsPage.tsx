@@ -3,16 +3,26 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Link2, Store, Copy, ExternalLink, ShoppingCart, UtensilsCrossed } from "lucide-react";
+import {
+  Link2, Store, Copy, ExternalLink, ShoppingCart,
+  UtensilsCrossed, AlertCircle, RefreshCw,
+} from "lucide-react";
 
 
 export default function SettingsPage() {
   const { user } = useAuth();
 
-  const { data: profile } = useQuery({
+  const {
+    data: profile,
+    isLoading: profileLoading,
+    isError: profileError,
+    refetch: retryProfile,
+  } = useQuery({
     queryKey: ["profile", user?.id],
     enabled: !!user,
+    retry: 2,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
@@ -24,25 +34,9 @@ export default function SettingsPage() {
     },
   });
 
-  const { data: store } = useQuery({
-    queryKey: ["store", profile?.store_id],
-    enabled: !!profile?.store_id,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("stores")
-        .select("*")
-        .eq("id", profile!.store_id!)
-        .single();
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  // store_id vem do perfil — NUNCA use user.id como fallback (é o ID do Auth, não da loja)
   const storeId = profile?.store_id ?? null;
-  const pdvUrl = storeId ? `${window.location.origin}/pdv/${storeId}` : null;
+  const pdvUrl      = storeId ? `${window.location.origin}/pdv/${storeId}`      : null;
   const cardapioUrl = storeId ? `${window.location.origin}/cardapio/${storeId}` : null;
-
 
   const copyLink = (url: string | null) => {
     if (!url) return;
@@ -50,6 +44,66 @@ export default function SettingsPage() {
     toast.success("Link copiado!");
   };
 
+  // ── Componente reutilizável para exibir o link ──────────────────────────────
+  function LinkBox({ url, label }: { url: string | null; label: string }) {
+    if (profileLoading) {
+      return (
+        <div className="flex gap-2">
+          <Skeleton className="flex-1 h-10 rounded-lg" />
+          <Skeleton className="w-24 h-10 rounded-lg" />
+          <Skeleton className="w-20 h-10 rounded-lg" />
+        </div>
+      );
+    }
+
+    if (profileError) {
+      return (
+        <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 gap-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>Não foi possível carregar o link. Verifique sua conexão.</span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 border-red-300 text-red-700 hover:bg-red-100 shrink-0"
+            onClick={() => retryProfile()}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Tentar novamente
+          </Button>
+        </div>
+      );
+    }
+
+    if (!storeId) {
+      return (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          Loja não configurada. Entre em contato com o suporte.
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="flex-1 flex items-center gap-2 bg-muted rounded-lg px-3 py-2 border overflow-hidden">
+          <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="text-sm font-mono truncate text-muted-foreground">{url}</span>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => copyLink(url)} className="gap-2 shrink-0">
+            <Copy className="h-4 w-4" /> Copiar
+          </Button>
+          <Button asChild className="gap-2 shrink-0">
+            <a href={url!} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="h-4 w-4" /> Abrir
+            </a>
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -72,27 +126,7 @@ export default function SettingsPage() {
             com apenas os produtos — sem precisar de login de administrador.
           </p>
 
-          {pdvUrl ? (
-            <div className="flex flex-col sm:flex-row gap-2">
-              <div className="flex-1 flex items-center gap-2 bg-muted rounded-lg px-3 py-2 border">
-                <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span className="text-sm font-mono truncate text-muted-foreground">{pdvUrl}</span>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => copyLink(pdvUrl)} className="gap-2 shrink-0">
-                  <Copy className="h-4 w-4" /> Copiar
-                </Button>
-                <Button asChild className="gap-2 shrink-0">
-                  <a href={pdvUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="h-4 w-4" /> Abrir
-                  </a>
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="py-4 text-center text-muted-foreground text-sm">Carregando...</div>
-          )}
-
+          <LinkBox url={pdvUrl} label="PDV" />
 
           <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-sm text-blue-700 space-y-1">
             <p className="font-semibold flex items-center gap-1.5">
@@ -123,26 +157,7 @@ export default function SettingsPage() {
             e você recebe direto na tela de <strong>Pedidos</strong>.
           </p>
 
-          {cardapioUrl ? (
-            <div className="flex flex-col sm:flex-row gap-2">
-              <div className="flex-1 flex items-center gap-2 bg-muted rounded-lg px-3 py-2 border">
-                <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span className="text-sm font-mono truncate text-muted-foreground">{cardapioUrl}</span>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => copyLink(cardapioUrl)} className="gap-2 shrink-0">
-                  <Copy className="h-4 w-4" /> Copiar
-                </Button>
-                <Button asChild className="gap-2 shrink-0">
-                  <a href={cardapioUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="h-4 w-4" /> Abrir
-                  </a>
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="py-4 text-center text-muted-foreground text-sm">Carregando...</div>
-          )}
+          <LinkBox url={cardapioUrl} label="Cardápio" />
 
           <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-sm text-emerald-700 space-y-1">
             <p className="font-semibold flex items-center gap-1.5">

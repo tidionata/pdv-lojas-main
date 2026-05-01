@@ -282,7 +282,8 @@ export default function PDV() {
 
   // Usa store_id do perfil ou, em modo offline, usa o próprio user.id
   const storeId = profile?.store_id ?? user?.id ?? "test-store";
-  const profileId = profile?.id ?? user?.id;
+  // user_id em sales referencia auth.users(id) — NUNCA use profile.id aqui
+  const authUserId = user?.id;
 
   const isValidUUID = (s?: string) =>
     !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
@@ -439,11 +440,11 @@ export default function PDV() {
       if (cart.length === 0) throw new Error("Carrinho vazio");
 
       // Se IDs não forem UUIDs válidos → salva offline
-      if (!isValidUUID(storeId) || !isValidUUID(profileId)) {
+      if (!isValidUUID(storeId) || !isValidUUID(authUserId)) {
         const offlineSale = {
           id: `offline-${Date.now()}`,
           store_id: storeId,
-          user_id: profileId,
+          user_id: authUserId,
           total,
           discount: discountValue,
           discount_type: discountType,
@@ -463,7 +464,7 @@ export default function PDV() {
         .from("sales")
         .insert({
           store_id: storeId,
-          user_id: profileId,
+          user_id: authUserId,   // auth.users(id)
           total,
           discount: discountValue,
           discount_type: discountType,
