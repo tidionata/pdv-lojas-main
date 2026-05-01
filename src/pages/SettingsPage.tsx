@@ -204,6 +204,7 @@ export default function SettingsPage() {
           { id: "links",       label: "🔗 Links" },
           { id: "integracoes", label: "⚙️ Integrações" },
           { id: "nfce",        label: "🧾 NFC-e" },
+          { id: "impressora",  label: "🖨️ Impressora" },
         ] as const).map((tab) => (
           <button
             key={tab.id}
@@ -612,6 +613,77 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </>
+      )}
+
+      {/* ── ABA: IMPRESSORA ─────────────────────────────────────────────────── */}
+      {activeTab === "impressora" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Printer className="h-5 w-5 text-primary" />
+              Configuração de Impressão
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-3">
+              <h3 className="font-semibold">Impressão Automática</h3>
+              <p className="text-sm text-muted-foreground">
+                Ao ativar esta opção, o sistema tentará abrir a tela de impressão automaticamente
+                logo após você clicar em "Finalizar Venda" no PDV.
+              </p>
+              
+              <div className="flex items-center gap-2 mt-2">
+                <input 
+                  type="checkbox" 
+                  id="autoPrint" 
+                  className="w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary"
+                  checked={localStorage.getItem("pdv_autoprint") === "true"}
+                  onChange={(e) => {
+                    localStorage.setItem("pdv_autoprint", e.target.checked ? "true" : "false");
+                    // Força re-render para atualizar o checkbox visualmente
+                    setNfe({ ...nfe });
+                    toast.success(e.target.checked ? "Impressão automática ativada!" : "Impressão automática desativada!");
+                  }}
+                />
+                <Label htmlFor="autoPrint" className="font-medium cursor-pointer">
+                  Imprimir recibo automaticamente ao finalizar venda
+                </Label>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-3">
+              <h3 className="font-semibold flex items-center gap-2">
+                🚀 Como configurar a Impressão Silenciosa (Sem tela de confirmação)
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Por questões de segurança, os navegadores web não deixam um site imprimir sem a sua confirmação. 
+                Porém, se você usa o PDV em um computador de caixa fixo (Windows), você pode configurar o Google Chrome ou Microsoft Edge para <strong>imprimir direto (Kiosk Printing)</strong>.
+              </p>
+              
+              <div className="bg-muted p-4 rounded-lg space-y-2 text-sm">
+                <p className="font-medium">Passo a passo (Google Chrome no Windows):</p>
+                <ol className="list-decimal list-inside space-y-2 text-muted-foreground ml-2">
+                  <li>Feche todos os navegadores Chrome abertos.</li>
+                  <li>Clique com botão direito no atalho do Google Chrome na sua Área de Trabalho e vá em <strong>Propriedades</strong>.</li>
+                  <li>Na aba Atalho, procure o campo <strong>Destino</strong>.</li>
+                  <li>
+                    No final do texto (depois das aspas), dê um espaço e adicione o código:<br/>
+                    <code className="bg-background px-2 py-1 rounded text-primary mt-1 inline-block select-all">--kiosk-printing</code>
+                  </li>
+                  <li>O Destino ficará parecido com: <code>"C:\...\chrome.exe" --kiosk-printing</code></li>
+                  <li>Clique em <strong>Aplicar</strong> e depois em <strong>OK</strong>.</li>
+                  <li>Defina sua impressora térmica como a <strong>Impressora Padrão</strong> no Windows.</li>
+                  <li>Abra o Chrome por esse atalho. Agora toda impressão irá direto para o papel!</li>
+                </ol>
+              </div>
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                <strong>Atenção:</strong> Ao abrir o Chrome com esse atalho, qualquer coisa que você mandar imprimir em qualquer site será impresso direto na impressora padrão sem perguntar. Use esse atalho apenas no computador do caixa.
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

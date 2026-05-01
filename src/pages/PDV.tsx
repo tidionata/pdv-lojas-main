@@ -184,6 +184,14 @@ function CupomModal({
 }) {
   const printRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (open && localStorage.getItem("pdv_autoprint") === "true") {
+      // Pequeno atraso para garantir que o DOM do cupom foi renderizado
+      const timer = setTimeout(handlePrint, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
+
   const handlePrint = () => {
     const content = printRef.current;
     if (!content) return;
