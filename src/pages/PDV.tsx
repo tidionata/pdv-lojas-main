@@ -429,6 +429,16 @@ export default function PDV() {
     );
   };
 
+  const removeFromCart = (cartItemId: string) =>
+    setCart((prev) => prev.filter((i) => i.cartItemId !== cartItemId));
+
+  const clearCart = () => { setCart([]); setDiscount(0); };
+
+  // Totals
+  const subtotal = cart.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
+  const discountValue = discountType === "percent" ? subtotal * (discount / 100) : discount;
+  const total = Math.max(0, subtotal - discountValue);
+
   // Finalize sale
   const saleMutation = useMutation({
     mutationFn: async () => {
