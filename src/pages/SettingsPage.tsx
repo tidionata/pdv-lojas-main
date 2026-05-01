@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import {
   Link2, Store, Copy, ExternalLink, ShoppingCart,
   UtensilsCrossed, AlertCircle, RefreshCw, Eye, EyeOff,
-  FileText, Save, ExternalLink as ExtLink, Shield, Radio,
+  FileText, Save, ExternalLink as ExtLink, Shield, Radio, Printer,
 } from "lucide-react";
 import {
   SEFAZ_BY_UF, UF_NAMES, SERVICO_LABELS,
