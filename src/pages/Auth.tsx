@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,17 +18,17 @@ export default function Auth() {
   const navigate = useNavigate();
 
   // Login state
-  const [loginEmail, setLoginEmail] = useState("");
+  const [loginEmail, setLoginEmail]       = useState("");
   const [loginPassword, setLoginPassword] = useState("");
 
   // Signup state
-  const [signupName, setSignupName] = useState("");
+  const [signupName, setSignupName]           = useState("");
   const [signupStoreName, setSignupStoreName] = useState("");
-  const [signupEmail, setSignupEmail] = useState("");
-  const [signupPassword, setSignupPassword] = useState("");
+  const [signupEmail, setSignupEmail]         = useState("");
+  const [signupPassword, setSignupPassword]   = useState("");
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) navigate("/dashboard");
     });
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -40,36 +41,45 @@ export default function Auth() {
     e.preventDefault();
     setLoading(true);
 
-    // Login com conta de teste local
-    if (loginEmail === "tidionata@gmail.com" && loginPassword === "14192583") {
-      localStorage.setItem("TEST_USER_LOGGED_IN", "true");
-      navigate("/dashboard");
-      setLoading(false);
-      return;
+    const { error } = await supabase.auth.signInWithPassword({
+      email: loginEmail,
+      password: loginPassword,
+    });
+
+    if (error) {
+      // Mensagem genérica — não revela se email existe ou não (Teste 3)
+      toast({
+        title: "Erro ao entrar",
+        description: "Credenciais inválidas. Verifique seu email e senha.",
+        variant: "destructive",
+      });
     }
 
-    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword });
-    if (error) toast({ title: "Erro ao entrar", description: error.message, variant: "destructive" });
     setLoading(false);
   };
-
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
     const { error } = await supabase.auth.signUp({
       email: signupEmail,
       password: signupPassword,
       options: {
-        data: { full_name: signupName, store_name: signupStoreName || "Minha Loja" },
+        data: {
+          full_name: signupName,
+          store_name: signupStoreName || "Minha Loja",
+        },
         emailRedirectTo: window.location.origin,
       },
     });
+
     if (error) {
       toast({ title: "Erro ao cadastrar", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Conta criada!", description: "Verifique seu email para confirmar." });
     }
+
     setLoading(false);
   };
 
@@ -77,8 +87,10 @@ export default function Auth() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold text-primary font-['Space_Grotesk']">PdvTotal</CardTitle>
-          <CardDescription>Gerencie seu expositor como um profissional</CardDescription>
+          <CardTitle className="text-2xl font-bold text-primary font-['Space_Grotesk']">
+            PdvTotal
+          </CardTitle>
+          <CardDescription>Gerencie seu negócio como um profissional</CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue={defaultTab}>
@@ -87,55 +99,82 @@ export default function Auth() {
               <TabsTrigger value="signup">Criar conta</TabsTrigger>
             </TabsList>
 
+            {/* ── Login ───────────────────────────────────────────────── */}
             <TabsContent value="login">
               <form onSubmit={handleLogin} className="space-y-4 mt-4">
                 <div className="space-y-2">
                   <Label htmlFor="login-email">Email</Label>
-                  <Input id="login-email" type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} required />
+                  <Input
+                    id="login-email"
+                    type="email"
+                    value={loginEmail}
+                    onChange={e => setLoginEmail(e.target.value)}
+                    autoComplete="email"
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="login-password">Senha</Label>
-                  <Input id="login-password" type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} required />
+                  <Input
+                    id="login-password"
+                    type="password"
+                    value={loginPassword}
+                    onChange={e => setLoginPassword(e.target.value)}
+                    autoComplete="current-password"
+                    required
+                  />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Entrar"}
                 </Button>
-                <div className="relative my-2">
-                  <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
-                  <div className="relative flex justify-center text-xs uppercase"><span className="bg-background px-2 text-muted-foreground">ou</span></div>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full text-sm"
-                  onClick={() => {
-                    localStorage.setItem("TEST_USER_LOGGED_IN", "true");
-                    navigate("/dashboard");
-                  }}
-                >
-                  🧪 Entrar com conta de teste
-                </Button>
               </form>
             </TabsContent>
 
-
+            {/* ── Cadastro ─────────────────────────────────────────────── */}
             <TabsContent value="signup">
               <form onSubmit={handleSignup} className="space-y-4 mt-4">
                 <div className="space-y-2">
                   <Label htmlFor="signup-name">Seu nome</Label>
-                  <Input id="signup-name" value={signupName} onChange={e => setSignupName(e.target.value)} required />
+                  <Input
+                    id="signup-name"
+                    value={signupName}
+                    onChange={e => setSignupName(e.target.value)}
+                    autoComplete="name"
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-store">Nome da loja</Label>
-                  <Input id="signup-store" value={signupStoreName} onChange={e => setSignupStoreName(e.target.value)} placeholder="Minha Loja" />
+                  <Input
+                    id="signup-store"
+                    value={signupStoreName}
+                    onChange={e => setSignupStoreName(e.target.value)}
+                    placeholder="Minha Loja"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-email">Email</Label>
-                  <Input id="signup-email" type="email" value={signupEmail} onChange={e => setSignupEmail(e.target.value)} required />
+                  <Input
+                    id="signup-email"
+                    type="email"
+                    value={signupEmail}
+                    onChange={e => setSignupEmail(e.target.value)}
+                    autoComplete="email"
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-password">Senha</Label>
-                  <Input id="signup-password" type="password" value={signupPassword} onChange={e => setSignupPassword(e.target.value)} required minLength={6} />
+                  <Input
+                    id="signup-password"
+                    type="password"
+                    value={signupPassword}
+                    onChange={e => setSignupPassword(e.target.value)}
+                    autoComplete="new-password"
+                    required
+                    minLength={8}
+                  />
+                  <p className="text-xs text-muted-foreground">Mínimo 8 caracteres</p>
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Criar conta"}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -89,17 +89,19 @@ export default function SettingsPage() {
         .from("store_secrets")
         .select("id, nfe_config")
         .eq("store_id", profile!.store_id!)
-        .maybeSingle(); // pode não existir ainda (primeiro acesso)
+        .maybeSingle();
       if (error) throw error;
       return data;
     },
-    onSuccess: (data: any) => {
-      if (!nfeLoaded && data?.nfe_config) {
-        setNfe(data.nfe_config as NfeConfig);
-        setNfeLoaded(true);
-      }
-    },
   });
+
+  // Inicializa o formulário NFe quando os secrets chegarem
+  useEffect(() => {
+    if (!nfeLoaded && secrets?.nfe_config) {
+      setNfe(secrets.nfe_config as NfeConfig);
+      setNfeLoaded(true);
+    }
+  }, [secrets, nfeLoaded]);
 
   // ── Mutation: salvar NFe config em store_secrets ─────────────────────────────
   const saveMutation = useMutation({
