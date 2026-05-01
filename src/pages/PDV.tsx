@@ -282,8 +282,8 @@ export default function PDV() {
 
   // Usa store_id do perfil ou, em modo offline, usa o próprio user.id
   const storeId = profile?.store_id ?? user?.id ?? "test-store";
-  // user_id em sales referencia auth.users(id) — NUNCA use profile.id aqui
-  const authUserId = user?.id;
+  // sales.user_id referencia profiles(id) — NUNCA use auth user.id aqui
+  const profileId = profile?.id;
 
   const isValidUUID = (s?: string) =>
     !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
@@ -439,12 +439,15 @@ export default function PDV() {
     mutationFn: async () => {
       if (cart.length === 0) throw new Error("Carrinho vazio");
 
-      // Se IDs não forem UUIDs válidos → salva offline
-      if (!isValidUUID(storeId) || !isValidUUID(authUserId)) {
+      // Aguarda perfil carregar — profileId é obrigatório (FK para profiles.id)
+      if (!profileId) throw new Error("Perfil ainda não carregado. Aguarde e tente novamente.");
+
+      // Se store_id não for UUID válido → salva offline
+      if (!isValidUUID(storeId)) {
         const offlineSale = {
           id: `offline-${Date.now()}`,
           store_id: storeId,
-          user_id: authUserId,
+          user_id: profileId,
           total,
           discount: discountValue,
           discount_type: discountType,
@@ -464,7 +467,7 @@ export default function PDV() {
         .from("sales")
         .insert({
           store_id: storeId,
-          user_id: authUserId,   // auth.users(id)
+          user_id: profileId,  // profiles.id (FK correta)
           total,
           discount: discountValue,
           discount_type: discountType,
