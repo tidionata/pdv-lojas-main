@@ -266,16 +266,21 @@ export default function PDV() {
   useEffect(() => { searchRef.current?.focus(); }, []);
 
   // Profile / store
-  const { data: profile } = useQuery({
+  const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ["profile", user?.id],
     enabled: !!user,
+    retry: 3,
+    retryDelay: 1000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
         .select("id, store_id, full_name")
         .eq("auth_user_id", user!.id)
         .single();
-      if (error) throw error;
+      if (error) {
+        console.error("[PDV] Erro ao carregar perfil:", error.message);
+        throw error;
+      }
       return data;
     },
   });
@@ -439,10 +444,8 @@ export default function PDV() {
     mutationFn: async () => {
       if (cart.length === 0) throw new Error("Carrinho vazio");
 
-      // Aguarda perfil carregar — profileId é obrigatório (FK para profiles.id)
-      if (!profileId) throw new Error("Perfil ainda não carregado. Aguarde e tente novamente.");
-
-      // Se store_id não for UUID válido → salva offline
+      // profileId pode ser null se o perfil ainda não carregou — a venda é registrada assim mesmo
+      // (sales.user_id é nullable desde a migration 20260501)
       if (!isValidUUID(storeId)) {
         const offlineSale = {
           id: `offline-${Date.now()}`,
