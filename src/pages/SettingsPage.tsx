@@ -11,8 +11,12 @@ import { toast } from "sonner";
 import {
   Link2, Store, Copy, ExternalLink, ShoppingCart,
   UtensilsCrossed, AlertCircle, RefreshCw, Eye, EyeOff,
-  FileText, Save, ExternalLink as ExtLink, Shield,
+  FileText, Save, ExternalLink as ExtLink, Shield, Radio,
 } from "lucide-react";
+import {
+  SEFAZ_BY_UF, UF_NAMES, SERVICO_LABELS,
+  type SefazServico,
+} from "@/lib/sefaz-endpoints";
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 interface NfeConfig {
@@ -21,7 +25,11 @@ interface NfeConfig {
   cnpj?: string;
   razao_social?: string;
   inscricao_estadual?: string;
-  regime_tributario?: "1" | "2" | "3"; // 1=SN, 2=SN excesso, 3=Normal
+  regime_tributario?: "1" | "2" | "3";
+  uf?: string;
+  nfce_serie?: string;
+  nfce_csc_id?: string;
+  nfce_csc_token?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -39,7 +47,8 @@ function maskCnpj(v: string) {
 export default function SettingsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"links" | "integracoes">("links");
+  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "nfce">("links");
+  const [sefazServico, setSefazServico] = useState<SefazServico>("NFeAutorizacao");
   const [showToken, setShowToken] = useState(false);
   const [nfe, setNfe] = useState<NfeConfig>({});
   const [nfeLoaded, setNfeLoaded] = useState(false);
@@ -191,17 +200,21 @@ export default function SettingsPage() {
 
       {/* Abas */}
       <div className="flex gap-1 border-b">
-        {(["links", "integracoes"] as const).map((tab) => (
+        {([
+          { id: "links",       label: "🔗 Links" },
+          { id: "integracoes", label: "⚙️ Integrações" },
+          { id: "nfce",        label: "🧾 NFC-e" },
+        ] as const).map((tab) => (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === tab
+              activeTab === tab.id
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            {tab === "links" ? "🔗 Links" : "⚙️ Integrações"}
+            {tab.label}
           </button>
         ))}
       </div>
@@ -426,6 +439,176 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground">
                 Pix automático, WhatsApp, iFood e mais serão adicionados em breve.
               </p>
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {/* ── ABA: NFC-e ──────────────────────────────────────────────────────── */}
+      {activeTab === "nfce" && (
+        <>
+          {/* Seletor de Estado + Série + CSC */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-5 w-5 text-primary" />
+                Configuração da NFC-e
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                <strong>NFC-e</strong> é a Nota Fiscal de Consumidor Eletrônica emitida no PDV.
+                Configure os dados abaixo de acordo com o seu estado e credenciais da SEFAZ.
+              </div>
+
+              {/* Estado (UF) */}
+              <div className="space-y-1.5">
+                <Label className="font-semibold">Estado (UF) da empresa</Label>
+                <select
+                  value={nfe.uf ?? ""}
+                  onChange={(e) => setNfe({ ...nfe, uf: e.target.value })}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">Selecione o estado...</option>
+                  {Object.entries(UF_NAMES).sort(([,a],[,b]) => a.localeCompare(b)).map(([uf, nome]) => (
+                    <option key={uf} value={uf}>{uf} — {nome}</option>
+                  ))}
+                </select>
+                {nfe.uf && (
+                  <p className="text-xs text-muted-foreground">
+                    Autorizador: <strong>{SEFAZ_BY_UF[nfe.uf]?.autorizador}</strong>
+                  </p>
+                )}
+              </div>
+
+              {/* Série NFC-e */}
+              <div className="space-y-1.5">
+                <Label className="font-semibold">Série NFC-e</Label>
+                <Input
+                  placeholder="Ex: 1"
+                  value={nfe.nfce_serie ?? ""}
+                  onChange={(e) => setNfe({ ...nfe, nfce_serie: e.target.value })}
+                  maxLength={3}
+                />
+                <p className="text-xs text-muted-foreground">Número da série configurada na SEFAZ (geralmente 1).</p>
+              </div>
+
+              {/* CSC */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="font-semibold">CSC ID</Label>
+                  <Input
+                    placeholder="Ex: 1"
+                    value={nfe.nfce_csc_id ?? ""}
+                    onChange={(e) => setNfe({ ...nfe, nfce_csc_id: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="font-semibold">CSC Token</Label>
+                  <Input
+                    type="password"
+                    placeholder="Código de Segurança do Contribuinte"
+                    value={nfe.nfce_csc_token ?? ""}
+                    onChange={(e) => setNfe({ ...nfe, nfce_csc_token: e.target.value })}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">O CSC é gerado no portal da SEFAZ do seu estado e é obrigatório para o QR Code da NFC-e.</p>
+
+              <Button
+                className="w-full gap-2"
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending}
+              >
+                <Save className="h-4 w-4" />
+                {saveMutation.isPending ? "Salvando..." : "Salvar configurações NFC-e"}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Consulta de endpoints SEFAZ */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Radio className="h-5 w-5 text-primary" />
+                Webservices SEFAZ — Consulta de Endpoints
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Selecione o estado e o serviço para ver a URL do endpoint oficial da SEFAZ v4.00.
+              </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* Seletor UF */}
+                <div className="space-y-1.5">
+                  <Label>Estado (UF)</Label>
+                  <select
+                    value={nfe.uf ?? ""}
+                    onChange={(e) => setNfe({ ...nfe, uf: e.target.value })}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="">Selecione...</option>
+                    {Object.entries(UF_NAMES).sort(([,a],[,b]) => a.localeCompare(b)).map(([uf, nome]) => (
+                      <option key={uf} value={uf}>{uf} — {nome}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Seletor Serviço */}
+                <div className="space-y-1.5">
+                  <Label>Serviço</Label>
+                  <select
+                    value={sefazServico}
+                    onChange={(e) => setSefazServico(e.target.value as SefazServico)}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    {(Object.entries(SERVICO_LABELS) as [SefazServico, string][]).map(([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* URL resultado */}
+              {nfe.uf && SEFAZ_BY_UF[nfe.uf] && (() => {
+                const url = SEFAZ_BY_UF[nfe.uf!].endpoints[sefazServico];
+                const aut = SEFAZ_BY_UF[nfe.uf!].autorizador;
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold bg-primary/10 text-primary rounded-full px-2 py-0.5">{aut}</span>
+                      <span className="text-xs text-muted-foreground">autorizador para {nfe.uf}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="flex-1 bg-muted rounded-lg px-3 py-2 border overflow-hidden">
+                        <p className="text-xs font-mono text-muted-foreground truncate">{url}</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => { navigator.clipboard.writeText(url); toast.success("URL copiada!"); }}
+                        title="Copiar URL"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                      {!url.startsWith("—") && (
+                        <Button asChild variant="outline" size="icon" title="Abrir no navegador">
+                          <a href={url} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {!nfe.uf && (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  Selecione um estado para ver os endpoints disponíveis.
+                </p>
+              )}
             </CardContent>
           </Card>
         </>
