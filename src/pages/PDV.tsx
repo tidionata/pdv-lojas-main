@@ -804,14 +804,7 @@ export default function PDV() {
                                 add.id ? a.id !== add.id : a.name !== add.name
                               ));
                             } else {
-                              const maxFree = (selectedProduct as any).max_additionals || 0;
-                              setSelectedAdds(prev => {
-                                if (maxFree > 0 && prev.length >= maxFree) {
-                                  toast.error(`Você só pode escolher até ${maxFree} opção(ões) grátis.`);
-                                  return prev;
-                                }
-                                return [...prev, add];
-                              });
+                              setSelectedAdds(prev => [...prev, add]);
                             }
                           }}
                         >

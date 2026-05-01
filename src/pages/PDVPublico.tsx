@@ -758,11 +758,6 @@ export default function PDVPublico() {
                                 <div className="space-y-3">
                                     <div className="flex justify-between items-end">
                                         <label className="text-sm font-medium">Acompanhamentos</label>
-                                        {(selectedProduct as any).max_additionals > 0 && (
-                                            <Badge variant="outline" className="text-emerald-600 bg-emerald-50 border-emerald-200">
-                                                Até {(selectedProduct as any).max_additionals} grátis
-                                            </Badge>
-                                        )}
                                     </div>
                                     <div className="grid gap-2 max-h-60 overflow-y-auto pr-1">
                                         {productAdditionals.map((add) => {
@@ -777,18 +772,13 @@ export default function PDVPublico() {
                                                         if (isSelected) {
                                                             setSelectedAdds(selectedAdds.filter((a) => a.id !== add.id));
                                                         } else {
-                                                            const maxFree = (selectedProduct as any).max_additionals || 0;
-                                                            if (maxFree > 0 && selectedAdds.length >= maxFree) {
-                                                                toast.error(`Você só pode escolher até ${maxFree} opção(ões).`);
-                                                            } else {
-                                                                setSelectedAdds([...selectedAdds, add]);
-                                                            }
+                                                            setSelectedAdds([...selectedAdds, add]);
                                                         }
                                                     }}
                                                 >
                                                     <span className={isSelected ? "font-semibold" : ""}>{add.name}</span>
                                                     <span className="text-sm font-medium text-muted-foreground">
-                                                        {add.price > 0 ? `+ ${fmt(add.price)}` : "Grátis"}
+                                                    {add.price > 0 ? `+ ${fmt(add.price)}` : ""}
                                                     </span>
                                                 </div>
                                             );
@@ -807,14 +797,7 @@ export default function PDVPublico() {
                                         return;
                                     }
                                     
-                                    let extraPrice = 0;
-                                    const maxFree = (selectedProduct as any).max_additionals || 0;
-                                    const sortedAdds = [...selectedAdds].sort((a, b) => a.price - b.price);
-                                    sortedAdds.forEach((add, idx) => {
-                                        if (idx >= maxFree) {
-                                            extraPrice += add.price;
-                                        }
-                                    });
+                                    const extraPrice = selectedAdds.reduce((sum: number, add: any) => sum + (add.price || 0), 0);
 
                                     const finalUnitPrice = selectedProduct.price + extraPrice;
                                     addToCart(selectedProduct, qtyNum, selectedAdds, finalUnitPrice);

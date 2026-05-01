@@ -138,7 +138,7 @@ export default function Auth() {
                   <Input id="signup-password" type="password" value={signupPassword} onChange={e => setSignupPassword(e.target.value)} required minLength={6} />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Criar conta grátis"}
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Criar conta"}
                 </Button>
               </form>
             </TabsContent>

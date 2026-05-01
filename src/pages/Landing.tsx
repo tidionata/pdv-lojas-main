@@ -57,7 +57,7 @@ export default function Landing() {
           <span className="text-xl font-bold font-['Space_Grotesk'] text-primary">PdvTotal</span>
           <div className="flex gap-3">
             <Button variant="ghost" asChild><Link to="/auth">Entrar</Link></Button>
-            <Button asChild><Link to="/auth?tab=signup">Começar grátis</Link></Button>
+            <Button asChild><Link to="/auth?tab=signup">Cadastrar agora</Link></Button>
           </div>
         </div>
       </nav>
@@ -67,7 +67,7 @@ export default function Landing() {
         <div className="container mx-auto text-center max-w-4xl">
           <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={0}>
             <span className="inline-block px-4 py-1.5 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
-              ✨ 7 dias grátis — sem cartão
+              ✨ Controle total do seu expositor
             </span>
           </motion.div>
           <motion.h1 
@@ -87,7 +87,7 @@ export default function Landing() {
           </motion.p>
           <motion.div className="flex flex-col sm:flex-row gap-4 justify-center" variants={fadeUp} custom={3} initial="hidden" animate="visible">
             <Button size="lg" className="text-base px-8 h-12" asChild>
-              <Link to="/auth?tab=signup">Testar 7 dias grátis <ArrowRight className="ml-2 h-4 w-4" /></Link>
+              <Link to="/auth?tab=signup">Começar agora <ArrowRight className="ml-2 h-4 w-4" /></Link>
             </Button>
             <Button size="lg" variant="outline" className="text-base px-8 h-12">
               Ver demonstração
@@ -152,7 +152,7 @@ export default function Landing() {
           <h2 className="text-3xl md:text-4xl font-bold text-center mb-4">
             Planos simples e transparentes 💰
           </h2>
-          <p className="text-muted-foreground text-center mb-12">Comece grátis por 7 dias. Cancele quando quiser.</p>
+          <p className="text-muted-foreground text-center mb-12">Escolha o plano ideal para o seu negócio.</p>
           <div className="grid md:grid-cols-3 gap-6">
             {plans.map((plan, i) => (
               <motion.div
@@ -195,12 +195,11 @@ export default function Landing() {
           <ShieldCheck className="h-16 w-16 text-primary mx-auto mb-6" />
           <h2 className="text-3xl md:text-4xl font-bold mb-4">Garantia total</h2>
           <p className="text-lg text-muted-foreground mb-8">
-            Teste grátis por 7 dias. Sem compromisso. Sem cartão de crédito. 
-            Se não gostar, é só cancelar.
+            Sem compromisso. Sem cartão de crédito. Se não gostar, é só cancelar.
           </p>
           <Button size="lg" className="text-base px-8 h-12" asChild>
             <Link to="/auth?tab=signup">
-              Comece agora — é grátis <ArrowRight className="ml-2 h-4 w-4" />
+              Começar agora <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
           </Button>
         </div>

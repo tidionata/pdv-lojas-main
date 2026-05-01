@@ -603,13 +603,13 @@ export default function Products() {
               {hasAdditionals && (
                 <div className="space-y-4">
 
-                  {/* Adicionais grátis inclusos */}
+                  {/* Limite de seleção */}
                   <div className="rounded-lg border bg-white overflow-hidden">
                     <div className="flex items-center gap-3 p-3">
                       <div className="flex-1">
-                        <Label className="font-semibold text-sm">Adicionais/Acompanhamentos Grátis</Label>
+                        <Label className="font-semibold text-sm">Limite de Acompanhamentos</Label>
                         <p className="text-xs text-muted-foreground">
-                          Exemplo: "Pode escolher até 3 carnes". <strong>0 = Sem limite</strong> (todos são cobrados).
+                          Máximo de opções que o cliente pode escolher. <strong>0 = Sem limite</strong>.
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -619,9 +619,9 @@ export default function Products() {
                       </div>
                     </div>
                     {maxAdditionals > 0 && (
-                      <div className="bg-emerald-50 border-t border-emerald-100 px-3 py-2 text-xs text-emerald-700 flex items-center gap-1.5">
+                      <div className="bg-blue-50 border-t border-blue-100 px-3 py-2 text-xs text-blue-700 flex items-center gap-1.5">
                         <CheckCircle className="h-3.5 w-3.5" />
-                        O cliente só poderá escolher até <strong>{maxAdditionals}</strong> opção(ões) no total.
+                        O cliente poderá escolher até <strong>{maxAdditionals}</strong> opção(es).
                       </div>
                     )}
                     {maxAdditionals === 0 && (
@@ -653,7 +653,7 @@ export default function Products() {
                               {a.price > 0 ? (
                                 <span className="text-sm font-semibold text-orange-600">+{fmt(a.price)}</span>
                               ) : (
-                                <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">Grátis</span>
+                                <span className="text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded border">R$ 0,00</span>
                               )}
                               {a.price > 0 && (
                                 <span className="text-[10px] text-muted-foreground bg-orange-50 border border-orange-200 text-orange-600 px-1.5 py-0.5 rounded">pago</span>
@@ -701,12 +701,8 @@ export default function Products() {
                         <strong>{additionals.filter(a => a.active).length} de {additionals.length}</strong>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Grátis inclusos:</span>
-                        <strong className="text-emerald-600">{maxAdditionals === 0 ? "nenhum (todos pagos)" : `${maxAdditionals} primeiros`}</strong>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Além do limite:</span>
-                        <strong className="text-orange-600">cobrado o preço individual</strong>
+                        <span className="text-muted-foreground">Limite de seleção:</span>
+                        <strong className="text-blue-600">{maxAdditionals === 0 ? "sem limite" : `máx. ${maxAdditionals}`}</strong>
                       </div>
                     </div>
                   )}
