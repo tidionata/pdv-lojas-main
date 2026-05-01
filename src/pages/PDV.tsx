@@ -444,13 +444,6 @@ export default function PDV() {
     mutationFn: async () => {
       if (cart.length === 0) throw new Error("Carrinho vazio");
 
-      // Garante que o perfil foi carregado antes de inserir a venda
-      if (!profileId) {
-        throw new Error(
-          "Perfil do operador ainda n\u00e3o carregado. Aguarde um momento e tente novamente."
-        );
-      }
-
       if (!isValidUUID(storeId)) {
         const offlineSale = {
           id: `offline-${Date.now()}`,
@@ -720,11 +713,9 @@ export default function PDV() {
                   size="lg"
                   className="w-full h-12 text-base"
                   onClick={() => saleMutation.mutate()}
-                  disabled={saleMutation.isPending || cart.length === 0 || profileLoading || !profileId}
+                  disabled={saleMutation.isPending || cart.length === 0}
                 >
-                  {profileLoading
-                    ? "Carregando perfil..."
-                    : saleMutation.isPending
+                  {saleMutation.isPending
                     ? "Finalizando..."
                     : `Finalizar Venda \u2014 ${formatCurrency(total)}`
                   }
