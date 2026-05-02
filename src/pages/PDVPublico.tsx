@@ -196,6 +196,21 @@ export default function PDVPublico() {
         },
     });
 
+    // Configuração de Impostos (Reforma 2026)
+    const { data: taxConfig } = useQuery({
+        queryKey: ["store_tax_config_public", storeId],
+        enabled: !!storeId,
+        queryFn: async () => {
+            const { data, error } = await supabase
+                .from("store_tax_config")
+                .select("*")
+                .eq("store_id", storeId!)
+                .maybeSingle();
+            if (error) throw error;
+            return data || { cbs_rate: 0.9, ibs_rate: 0.1 };
+        },
+    });
+
     // Products
     const { data: products = [], isLoading } = useQuery({
         queryKey: ["products-public", storeId],
@@ -340,13 +355,31 @@ export default function PDVPublico() {
                 .single();
             if (saleError) throw saleError;
 
-            const items = cart.map((i) => ({
-                sale_id: sale.id,
-                product_id: i.product.id,
-                quantity: i.quantity,
-                unit_price: i.unitPrice,
-                subtotal: i.unitPrice * i.quantity,
-            }));
+            const items = cart.map((i) => {
+                const itemSubtotal = i.unitPrice * i.quantity;
+                // Proporcionaliza o desconto no item para base de cálculo IBS/CBS
+                const itemDiscount = subtotal > 0 ? (itemSubtotal / subtotal) * discountValue : 0;
+                const ibsCbsBase = Math.max(0, itemSubtotal - itemDiscount);
+
+                const cbsRate = Number(taxConfig?.cbs_rate ?? 0.9);
+                const ibsRate = Number(taxConfig?.ibs_rate ?? 0.1);
+
+                const valorCbs = Number((ibsCbsBase * (cbsRate / 100)).toFixed(2));
+                const valorIbs = Number((ibsCbsBase * (ibsRate / 100)).toFixed(2));
+
+                return {
+                    sale_id: sale.id,
+                    product_id: i.product.id,
+                    quantity: i.quantity,
+                    unit_price: i.unitPrice,
+                    subtotal: itemSubtotal,
+                    ibs_cbs_base: ibsCbsBase,
+                    aliquota_cbs: cbsRate,
+                    valor_cbs: valorCbs,
+                    aliquota_ibs: ibsRate,
+                    valor_ibs: valorIbs,
+                };
+            });
             const { error: itemsError } = await supabase.from("sale_items").insert(items);
             if (itemsError) throw itemsError;
 

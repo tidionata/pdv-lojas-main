@@ -31,6 +31,7 @@ export type Database = {
           stock_total: number
           store_id: string
           updated_at: string
+          tax_ibs_cbs_classificacao: string | null
         }
         Insert: {
           active?: boolean
@@ -48,6 +49,7 @@ export type Database = {
           stock_total?: number
           store_id: string
           updated_at?: string
+          tax_ibs_cbs_classificacao?: string | null
         }
         Update: {
           active?: boolean
@@ -65,6 +67,7 @@ export type Database = {
           stock_total?: number
           store_id?: string
           updated_at?: string
+          tax_ibs_cbs_classificacao?: string | null
         }
         Relationships: [
           {
@@ -126,6 +129,11 @@ export type Database = {
           sale_id: string
           subtotal: number
           unit_price: number
+          ibs_cbs_base: number | null
+          aliquota_cbs: number | null
+          valor_cbs: number | null
+          aliquota_ibs: number | null
+          valor_ibs: number | null
         }
         Insert: {
           created_at?: string
@@ -135,6 +143,11 @@ export type Database = {
           sale_id: string
           subtotal?: number
           unit_price?: number
+          ibs_cbs_base?: number | null
+          aliquota_cbs?: number | null
+          valor_cbs?: number | null
+          aliquota_ibs?: number | null
+          valor_ibs?: number | null
         }
         Update: {
           created_at?: string
@@ -144,6 +157,11 @@ export type Database = {
           sale_id?: string
           subtotal?: number
           unit_price?: number
+          ibs_cbs_base?: number | null
+          aliquota_cbs?: number | null
+          valor_cbs?: number | null
+          aliquota_ibs?: number | null
+          valor_ibs?: number | null
         }
         Relationships: [
           {
@@ -290,6 +308,41 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      store_tax_config: {
+        Row: {
+          id: string
+          store_id: string
+          cbs_rate: number
+          ibs_rate: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          store_id: string
+          cbs_rate?: number
+          ibs_rate?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          store_id?: string
+          cbs_rate?: number
+          ibs_rate?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_tax_config_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       subscriptions: {
         Row: {

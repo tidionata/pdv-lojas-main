@@ -47,6 +47,8 @@ interface SaleTicket {
   storeAddress: string;
   storeCity: string;
   createdAt: Date;
+  nfceKey?: string;
+  nfceUrl?: string;
 }
 
 const fmt = (v: number) =>
@@ -78,7 +80,7 @@ function Cupom({ ticket, printRef }: { ticket: SaleTicket; printRef: React.RefOb
         <p className="text-[15px] font-bold tracking-widest">SENHA: {String(ticket.senha).padStart(3, "0")}</p>
         <p className="font-bold text-[12px]">{ticket.storeName}</p>
         {ticket.storeCnpj && (
-          <p>CNPJ {ticket.storeCnpj} IE: 000000000000</p>
+          <p>CNPJ {ticket.storeCnpj} IE: {ticket.nfceKey ? "CONFERIR" : "000000000000"}</p>
         )}
         {ticket.storeAddress && <p className="underline">{ticket.storeAddress}</p>}
         {ticket.storeCity && <p>{ticket.storeCity}</p>}
@@ -97,7 +99,7 @@ function Cupom({ ticket, printRef }: { ticket: SaleTicket; printRef: React.RefOb
         <span className="w-10">Qtd</span>
         <span className="w-10">Und</span>
         <span className="w-16 text-right">Vl Unit</span>
-        <span className="w-16 text-right">Vl Total</span>
+        <span className="w-16 text-right" >Vl Total</span>
       </div>
 
       <div className="border-t border-dashed border-black mb-1" />
@@ -156,14 +158,28 @@ function Cupom({ ticket, printRef }: { ticket: SaleTicket; printRef: React.RefOb
 
       <div className="border-t border-dashed border-black my-1" />
 
-      {/* Tributos */}
-      <div className="text-[10px] space-y-0.5">
-        <div className="flex justify-between">
-          <span className="underline">Informação dos Tributos Totais</span>
-          <span>00,00</span>
+      {/* NFC-e Info */}
+      {ticket.nfceKey ? (
+        <div className="text-[10px] space-y-1 mb-2">
+          <p className="font-bold">CHAVE DE ACESSO:</p>
+          <p className="break-all">{ticket.nfceKey}</p>
+          <p className="text-center font-bold mt-2">Protocolo: Autorizada pelo SEFAZ</p>
+          <div className="flex justify-center py-2">
+            <div className="w-24 h-24 bg-gray-100 flex items-center justify-center text-[8px] text-center p-2 border border-gray-300">
+              [QR CODE NFC-e]
+            </div>
+          </div>
+          <p className="text-[8px] text-center">Consulte pela Chave de Acesso em http://nfce.sefaz.gov.br/consulta</p>
         </div>
-        <p>Incidentes (Lei Federal 12.741/2012)</p>
-      </div>
+      ) : (
+        <div className="text-[10px] space-y-0.5">
+          <div className="flex justify-between">
+            <span className="underline">Informação dos Tributos Totais</span>
+            <span>00,00</span>
+          </div>
+          <p>Incidentes (Lei Federal 12.741/2012)</p>
+        </div>
+      )}
 
       <div className="border-t border-dashed border-black my-1" />
 
@@ -255,6 +271,9 @@ function CupomModal({
   );
 }
 
+import { emitirNfce } from "@/lib/focus-nfe";
+import { Checkbox } from "@/components/ui/checkbox";
+
 // ─── PDV Principal ────────────────────────────────────────────────────────────
 export default function PDV() {
   const { user } = useAuth();
@@ -264,6 +283,7 @@ export default function PDV() {
   const [discount, setDiscount] = useState(0);
   const [discountType, setDiscountType] = useState<"fixed" | "percent">("fixed");
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [emitNfce, setEmitNfce] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const [cupomOpen, setCupomOpen] = useState(false);
   const [lastTicket, setLastTicket] = useState<SaleTicket | null>(null);
@@ -315,6 +335,21 @@ export default function PDV() {
       const { data, error } = await supabase.from("stores").select("*").eq("id", storeId!).single();
       if (error) throw error;
       return data;
+    },
+  });
+
+  // Configuração de Impostos (Reforma 2026)
+  const { data: taxConfig } = useQuery({
+    queryKey: ["store_tax_config", storeId],
+    enabled: !!storeId && isValidUUID(storeId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("store_tax_config")
+        .select("*")
+        .eq("store_id", storeId!)
+        .maybeSingle();
+      if (error) throw error;
+      return data || { cbs_rate: 0.9, ibs_rate: 0.1 };
     },
   });
 
@@ -457,6 +492,9 @@ export default function PDV() {
     mutationFn: async () => {
       if (cart.length === 0) throw new Error("Carrinho vazio");
 
+      let saleId: string;
+      let nfceData: any = null;
+
       if (!isValidUUID(storeId)) {
         const offlineSale = {
           id: `offline-${Date.now()}`,
@@ -474,41 +512,75 @@ export default function PDV() {
         const prev = JSON.parse(localStorage.getItem(key) || "[]");
         localStorage.setItem(key, JSON.stringify([...prev, offlineSale]));
         toast.info("Venda salva localmente (modo offline)");
-        return offlineSale as any;
+        saleId = offlineSale.id;
+      } else {
+        const { data: sale, error: saleError } = await supabase
+          .from("sales")
+          .insert({
+            store_id: storeId,
+            user_id: profileId,
+            total,
+            discount: discountValue,
+            discount_type: discountType,
+            payment_method: paymentMethod,
+            status: "completed",
+          })
+          .select("id")
+          .single();
+        if (saleError) throw saleError;
+        saleId = sale.id;
+
+        const items = cart.map((i) => {
+          const itemSubtotal = i.unitPrice * i.quantity;
+          // Proporcionaliza o desconto no item para base de cálculo IBS/CBS
+          const itemDiscount = subtotal > 0 ? (itemSubtotal / subtotal) * discountValue : 0;
+          const ibsCbsBase = Math.max(0, itemSubtotal - itemDiscount);
+          
+          const cbsRate = Number(taxConfig?.cbs_rate ?? 0.9);
+          const ibsRate = Number(taxConfig?.ibs_rate ?? 0.1);
+          
+          const valorCbs = Number((ibsCbsBase * (cbsRate / 100)).toFixed(2));
+          const valorIbs = Number((ibsCbsBase * (ibsRate / 100)).toFixed(2));
+
+          return {
+            sale_id: saleId,
+            product_id: isValidUUID(i.product.id) ? i.product.id : null,
+            quantity: i.quantity,
+            unit_price: i.unitPrice,
+            subtotal: itemSubtotal,
+            ibs_cbs_base: ibsCbsBase,
+            aliquota_cbs: cbsRate,
+            valor_cbs: valorCbs,
+            aliquota_ibs: ibsRate,
+            valor_ibs: valorIbs,
+          };
+        });
+        const { error: itemsError } = await supabase.from("sale_items").insert(items);
+        if (itemsError) throw itemsError;
       }
 
-      const { data: sale, error: saleError } = await supabase
-        .from("sales")
-        .insert({
-          store_id: storeId,
-          user_id: profileId,  // profiles.id — garantido não-nulo acima
-          total,
-          discount: discountValue,
-          discount_type: discountType,
-          payment_method: paymentMethod,
-          status: "completed",
-        })
-        .select("id")
-        .single();
-      if (saleError) throw saleError;
+      // Tenta emitir NFC-e se solicitado
+      if (emitNfce && isValidUUID(storeId)) {
+        try {
+          toast.loading("Comunicando com SEFAZ...", { id: "nfce-loading" });
+          nfceData = await emitirNfce(storeId, {
+            id: saleId,
+            total,
+            items: cart,
+            paymentMethod
+          });
+          toast.success("NFC-e Autorizada!", { id: "nfce-loading" });
+        } catch (e: any) {
+          toast.error("Erro na NFC-e: " + e.message, { id: "nfce-loading" });
+        }
+      }
 
-
-      const items = cart.map((i) => ({
-        sale_id: sale.id,
-        product_id: isValidUUID(i.product.id) ? i.product.id : null,
-        quantity: i.quantity,
-        unit_price: i.unitPrice,
-        subtotal: i.unitPrice * i.quantity,
-      }));
-      const { error: itemsError } = await supabase.from("sale_items").insert(items);
-      if (itemsError) throw itemsError;
-
-      return sale;
+      return { id: saleId, nfce: nfceData };
     },
-    onSuccess: (sale) => {
+    onSuccess: (result) => {
       // Monta o ticket do cupom
       const ticket: SaleTicket = {
-        saleId: sale.id,
+        saleId: result.id,
         senha: saleCounter,
         items: [...cart],
         subtotal,
@@ -517,16 +589,19 @@ export default function PDV() {
         paymentMethod,
         cashierName: profile?.full_name ?? user?.email ?? "Operador",
         storeName: store?.name ?? "Minha Loja",
-        storeCnpj: (store as { cnpj?: string })?.cnpj ?? "",
-        storeAddress: (store as { address?: string })?.address ?? "",
-        storeCity: (store as { city?: string })?.city ?? "",
+        storeCnpj: (store as any)?.cnpj ?? "",
+        storeAddress: (store as any)?.address ?? "",
+        storeCity: (store as any)?.city ?? "",
         createdAt: new Date(),
+        nfceKey: result.nfce?.chave_nfe,
+        nfceUrl: result.nfce?.caminho_xml_nota_fiscal,
       };
       setLastTicket(ticket);
       setSaleCounter((n) => n + 1);
       setCupomOpen(true);
 
       clearCart();
+      setEmitNfce(false); // Reset para próxima venda
       queryClient.invalidateQueries({ queryKey: ["products"] });
     },
     onError: (e) => toast.error("Erro na venda: " + e.message),
@@ -719,6 +794,21 @@ export default function PDV() {
                     <span>Total</span>
                     <span>{formatCurrency(total)}</span>
                   </div>
+                </div>
+
+                {/* NFC-e Toggle */}
+                <div className="flex items-center space-x-2 py-1 px-2 bg-primary/5 rounded-md border border-primary/20">
+                  <Checkbox
+                    id="emit-nfce"
+                    checked={emitNfce}
+                    onCheckedChange={(checked) => setEmitNfce(!!checked)}
+                  />
+                  <label
+                    htmlFor="emit-nfce"
+                    className="text-xs font-medium leading-none cursor-pointer select-none"
+                  >
+                    Emitir NFC-e (Focus NFe)
+                  </label>
                 </div>
 
                 {/* Finalize */}

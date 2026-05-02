@@ -23,6 +23,7 @@ import {
   Plus, Pencil, Trash2, Search, Package, Settings2,
   Tag, DollarSign, Boxes, ScanBarcode, List,
   CirclePlus, GripVertical, CheckCircle, ImageIcon, Link,
+  CheckCircle2,
 } from "lucide-react";
 
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
@@ -38,9 +39,10 @@ type ProductAdditional = {
   active: boolean;
 };
 
-const emptyForm: Partial<TablesInsert<"products">> & { image_url?: string } = {
+const emptyForm: Partial<TablesInsert<"products">> & { image_url?: string, tax_ibs_cbs_classificacao?: string } = {
   name: "", barcode: "", category: "", description: "", image_url: "",
   cost: 0, price: 0, stock_total: 0, stock_display: 0, min_display_stock: 0, active: true,
+  tax_ibs_cbs_classificacao: "010101",
 };
 
 
@@ -248,6 +250,8 @@ export default function Products() {
       min_display_stock: p.min_display_stock, active: p.active,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       image_url: (p as any).image_url ?? "",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tax_ibs_cbs_classificacao: (p as any).tax_ibs_cbs_classificacao ?? "",
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -531,6 +535,28 @@ export default function Products() {
                 </div>
               </div>
 
+            </div>
+
+            {/* ── Tributação ────────────────────────────────────────── */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Tributação (Reforma 2026)
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <Label className="flex items-center gap-1">Classificação Tributária IBS/CBS (6 dígitos)</Label>
+                  <Input 
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    value={(form as any).tax_ibs_cbs_classificacao ?? ""} 
+                    onChange={e => setField("tax_ibs_cbs_classificacao", e.target.value.replace(/\D/g, "").substring(0, 6))} 
+                    placeholder="Ex: 010101" 
+                    maxLength={6}
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Código oficial para o novo IBS/CBS. Consulte seu contador para o código de 6 dígitos.
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* ── Preços ────────────────────────────────────────────── */}

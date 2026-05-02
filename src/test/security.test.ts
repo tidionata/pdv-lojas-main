@@ -301,3 +301,45 @@ describe("PDV — Cálculos de carrinho", () => {
     expect(calcSubtotal(1.35, 12.0)).toBeCloseTo(16.2, 2);
   });
 });
+
+// ── GRUPO 7: Reforma Tributária 2026 (IBS e CBS) ───────────────────────────
+describe("Reforma Tributária 2026 (IBS/CBS)", () => {
+  function calcIbsCbs(itemSubtotal: number, saleSubtotal: number, saleDiscount: number, cbsRate: number, ibsRate: number) {
+    const itemDiscount = saleSubtotal > 0 ? (itemSubtotal / saleSubtotal) * saleDiscount : 0;
+    const base = Math.max(0, itemSubtotal - itemDiscount);
+    const valorCbs = Number((base * (cbsRate / 100)).toFixed(2));
+    const valorIbs = Number((base * (ibsRate / 100)).toFixed(2));
+    return { base, valorCbs, valorIbs };
+  }
+
+  it("[T-Tax] Cálculo da base com desconto proporcional", () => {
+    // Venda de 200, desconto de 20. Item de 100.
+    // Desconto proporcional no item deve ser 10. Base = 90.
+    const result = calcIbsCbs(100, 200, 20, 0.9, 0.1);
+    expect(result.base).toBe(90);
+  });
+
+  it("[T-Tax] Cálculo dos valores CBS (0.9%) e IBS (0.1%)", () => {
+    // Base 1000. CBS = 9.00. IBS = 1.00.
+    const result = calcIbsCbs(1000, 1000, 0, 0.9, 0.1);
+    expect(result.valorCbs).toBe(9.00);
+    expect(result.valorIbs).toBe(1.00);
+  });
+
+  it("[T-Tax] Valores fracionados e arredondamento", () => {
+    // Base 155.50. 
+    // CBS (0.9%) = 1.3995 → 1.40
+    // IBS (0.1%) = 0.1555 → 0.16
+    const result = calcIbsCbs(155.50, 155.50, 0, 0.9, 0.1);
+    expect(result.valorCbs).toBe(1.40);
+    expect(result.valorIbs).toBe(0.16);
+  });
+
+  it("[T-Tax] Classificação tributária deve ter 6 dígitos", () => {
+    const regex = /^\d{6}$/;
+    expect("010101").toMatch(regex);
+    expect("12345").not.toMatch(regex);
+    expect("1234567").not.toMatch(regex);
+    expect("ABCDEF").not.toMatch(regex);
+  });
+});

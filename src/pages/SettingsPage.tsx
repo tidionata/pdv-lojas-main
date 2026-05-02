@@ -13,6 +13,7 @@ import {
   Link2, Store, Copy, ExternalLink, ShoppingCart,
   UtensilsCrossed, AlertCircle, RefreshCw, Eye, EyeOff,
   FileText, Save, ExternalLink as ExtLink, Shield, Radio, Printer,
+  CheckCircle2,
 } from "lucide-react";
 import {
   SEFAZ_BY_UF, UF_NAMES, SERVICO_LABELS,
@@ -48,7 +49,7 @@ function maskCnpj(v: string) {
 export default function SettingsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "nfce">("links");
+  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "nfce" | "impostos">("links");
   const [sefazServico, setSefazServico] = useState<SefazServico>("NFeAutorizacao");
   const [showToken, setShowToken] = useState(false);
   const [nfe, setNfe] = useState<NfeConfig>({});
@@ -90,6 +91,55 @@ export default function SettingsPage() {
     },
   });
 
+  // ── Query: store_tax_config (Reforma 2026) ───────────────────────────────
+  const { data: taxConfig, isLoading: taxLoading } = useQuery({
+    queryKey: ["store_tax_config", profile?.store_id],
+    enabled: !!profile?.store_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("store_tax_config")
+        .select("*")
+        .eq("store_id", profile!.store_id!)
+        .maybeSingle();
+      if (error) throw error;
+      return data || { cbs_rate: 0.9, ibs_rate: 0.1 };
+    },
+  });
+
+  const [taxForm, setTaxForm] = useState({ cbs_rate: 0.9, ibs_rate: 0.1 });
+
+  useEffect(() => {
+    if (taxConfig) {
+      setTaxForm({ 
+        cbs_rate: Number(taxConfig.cbs_rate), 
+        ibs_rate: Number(taxConfig.ibs_rate) 
+      });
+    }
+  }, [taxConfig]);
+
+  // ── Mutation: salvar impostos ──────────────────────────────────────────────
+  const taxMutation = useMutation({
+    mutationFn: async () => {
+      if (!store?.id) throw new Error("Loja não encontrada");
+      
+      const { error } = await supabase
+        .from("store_tax_config")
+        .upsert({ 
+          store_id: store.id, 
+          cbs_rate: taxForm.cbs_rate, 
+          ibs_rate: taxForm.ibs_rate,
+          updated_at: new Date().toISOString()
+        }, { onConflict: "store_id" });
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["store_tax_config"] });
+      toast.success("Configurações de impostos atualizadas!");
+    },
+    onError: (e: any) => toast.error(`Erro ao salvar impostos: ${e.message}`),
+  });
+
   // ── Query: store_secrets (só o owner acessa — token NFe isolado) ────────────
   const { data: secrets, isLoading: secretsLoading } = useQuery({
     queryKey: ["store_secrets", profile?.store_id],
@@ -118,18 +168,25 @@ export default function SettingsPage() {
     mutationFn: async () => {
       if (!store?.id) throw new Error("Loja não encontrada");
 
+      // Limpa espaços em branco dos tokens antes de salvar
+      const cleanedNfe = {
+        ...nfe,
+        token: nfe.token?.trim(),
+        nfce_csc_token: nfe.nfce_csc_token?.trim(),
+      };
+
       if (secrets?.id) {
         // Atualiza registro existente
         const { error } = await supabase
           .from("store_secrets")
-          .update({ nfe_config: nfe })
+          .update({ nfe_config: cleanedNfe })
           .eq("id", secrets.id);
         if (error) throw error;
       } else {
         // Cria novo registro
         const { error } = await supabase
           .from("store_secrets")
-          .insert({ store_id: store.id, nfe_config: nfe });
+          .insert({ store_id: store.id, nfe_config: cleanedNfe });
         if (error) throw error;
       }
     },
@@ -205,6 +262,7 @@ export default function SettingsPage() {
           { id: "links",       label: "🔗 Links" },
           { id: "integracoes", label: "⚙️ Integrações" },
           { id: "nfce",        label: "🧾 NFC-e" },
+          { id: "impostos",    label: "⚖️ Impostos" },
           { id: "impressora",  label: "🖨️ Impressora" },
         ] as const).map((tab) => (
           <button
@@ -614,6 +672,79 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </>
+      )}
+
+      {/* ── ABA: IMPOSTOS ───────────────────────────────────────────────────── */}
+      {activeTab === "impostos" && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Shield className="h-5 w-5 text-primary" />
+                Reforma Tributária (IBS e CBS) — Período 2026
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 text-sm text-blue-700 space-y-2">
+                <p className="font-semibold flex items-center gap-1.5">
+                  <AlertCircle className="h-4 w-4" /> Período de Transição 2026
+                </p>
+                <p className="text-xs leading-relaxed">
+                  Em 2026, entramos no período de testes da Reforma Tributária. Os sistemas devem destacar 
+                  o IBS (Estadual/Municipal) e a CBS (Federal) com alíquotas reduzidas.
+                </p>
+                <ul className="list-disc list-inside text-xs space-y-1">
+                  <li><strong>CBS:</strong> Alíquota padrão de <strong>0,9%</strong></li>
+                  <li><strong>IBS:</strong> Alíquota padrão de <strong>0,1%</strong> (sendo 0,1% Estado e 0% Município)</li>
+                  <li>A base de cálculo é o valor do item menos descontos.</li>
+                </ul>
+              </div>
+
+              <div className="grid gap-6 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="font-semibold">Alíquota CBS (%)</Label>
+                  <Input 
+                    type="number" step="0.01"
+                    value={taxForm.cbs_rate}
+                    onChange={e => setTaxForm({ ...taxForm, cbs_rate: parseFloat(e.target.value) || 0 })}
+                  />
+                  <p className="text-[10px] text-muted-foreground">Padrão 2026: 0,90%</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="font-semibold">Alíquota IBS (%)</Label>
+                  <Input 
+                    type="number" step="0.01"
+                    value={taxForm.ibs_rate}
+                    onChange={e => setTaxForm({ ...taxForm, ibs_rate: parseFloat(e.target.value) || 0 })}
+                  />
+                  <p className="text-[10px] text-muted-foreground">Padrão 2026: 0,10% (Estadual)</p>
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="bg-muted/30 p-4 rounded-lg border border-dashed">
+                <p className="text-xs font-semibold mb-2 flex items-center gap-1.5 text-muted-foreground uppercase">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Próximos Passos
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Além das alíquotas acima, você deve configurar a <strong>Classificação Tributária</strong> 
+                  em cada produto (Cadastro de Produtos → Tributação).
+                </p>
+              </div>
+
+              <Button 
+                className="w-full gap-2" 
+                onClick={() => taxMutation.mutate()}
+                disabled={taxMutation.isPending || taxLoading}
+              >
+                <Save className="h-4 w-4" />
+                {taxMutation.isPending ? "Salvando..." : "Salvar Alíquotas"}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* ── ABA: IMPRESSORA ─────────────────────────────────────────────────── */}
