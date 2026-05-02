@@ -170,6 +170,8 @@ export default function PDVPublico() {
     const [cupomOpen, setCupomOpen] = useState(false);
     const [lastTicket, setLastTicket] = useState<SaleTicket | null>(null);
     const [saleCounter, setSaleCounter] = useState(1);
+    const [customerName, setCustomerName] = useState("");
+    const [customerPhone, setCustomerPhone] = useState("");
     const searchRef = useRef<HTMLInputElement>(null);
 
     // Modal de Produto (Peso e Adicionais)
@@ -325,69 +327,87 @@ export default function PDVPublico() {
     const total = Math.max(0, subtotal - discountValue);
     const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
 
-    // Finalize sale
+    // Finalize sale (Order + Sale)
     const saleMutation = useMutation({
         mutationFn: async () => {
             if (cart.length === 0) throw new Error("Carrinho vazio");
             if (!storeId) throw new Error("Loja não encontrada");
+            if (!customerName.trim()) throw new Error("Informe o nome do cliente");
 
-            // Busca um perfil da loja para usar como user_id
-            const { data: profile, error: profileError } = await supabase
-                .from("profiles")
+            // 1. Cria o pedido na tabela orders (para aparecer na aba Pedidos)
+            const { data: order, error: orderError } = await supabase
+                .from("orders")
+                .insert({
+                    store_id: storeId,
+                    customer_name: customerName,
+                    customer_phone: customerPhone,
+                    total,
+                    payment_method: paymentMethod,
+                    status: "pending",
+                })
                 .select("id")
-                .eq("store_id", storeId)
-                .limit(1)
                 .single();
-            if (profileError) throw profileError;
+            
+            if (orderError) throw orderError;
 
+            const orderItems = cart.map((i) => ({
+                order_id: order.id,
+                product_id: i.product.id,
+                product_name: i.product.name,
+                unit_price: i.unitPrice,
+                quantity: i.quantity,
+                subtotal: i.unitPrice * i.quantity,
+                additionals: i.additionals || [],
+            }));
+            
+            const { error: itemsError } = await (supabase as any).from("order_items").insert(orderItems);
+            if (itemsError) throw itemsError;
+
+            // 2. Também registra na tabela de sales para relatórios e NFe
             const { data: sale, error: saleError } = await supabase
                 .from("sales")
                 .insert({
                     store_id: storeId,
-                    user_id: profile.id,
                     total,
                     discount: discountValue,
                     discount_type: discountType,
                     payment_method: paymentMethod,
                     status: "completed",
+                    notes: `Pedido: ${customerName}`,
                 })
                 .select("id")
                 .single();
-            if (saleError) throw saleError;
+            
+            if (!saleError) {
+                const saleItems = cart.map((i) => {
+                    const itemSubtotal = i.unitPrice * i.quantity;
+                    const itemDiscount = subtotal > 0 ? (itemSubtotal / subtotal) * discountValue : 0;
+                    const ibsCbsBase = Math.max(0, itemSubtotal - itemDiscount);
 
-            const items = cart.map((i) => {
-                const itemSubtotal = i.unitPrice * i.quantity;
-                // Proporcionaliza o desconto no item para base de cálculo IBS/CBS
-                const itemDiscount = subtotal > 0 ? (itemSubtotal / subtotal) * discountValue : 0;
-                const ibsCbsBase = Math.max(0, itemSubtotal - itemDiscount);
+                    const cbsRate = Number(taxConfig?.cbs_rate ?? 0.9);
+                    const ibsRate = Number(taxConfig?.ibs_rate ?? 0.1);
 
-                const cbsRate = Number(taxConfig?.cbs_rate ?? 0.9);
-                const ibsRate = Number(taxConfig?.ibs_rate ?? 0.1);
+                    return {
+                        sale_id: sale.id,
+                        product_id: i.product.id,
+                        quantity: i.quantity,
+                        unit_price: i.unitPrice,
+                        subtotal: itemSubtotal,
+                        ibs_cbs_base: ibsCbsBase,
+                        aliquota_cbs: cbsRate,
+                        valor_cbs: Number((ibsCbsBase * (cbsRate / 100)).toFixed(2)),
+                        aliquota_ibs: ibsRate,
+                        valor_ibs: Number((ibsCbsBase * (ibsRate / 100)).toFixed(2)),
+                    };
+                });
+                await supabase.from("sale_items").insert(saleItems);
+            }
 
-                const valorCbs = Number((ibsCbsBase * (cbsRate / 100)).toFixed(2));
-                const valorIbs = Number((ibsCbsBase * (ibsRate / 100)).toFixed(2));
-
-                return {
-                    sale_id: sale.id,
-                    product_id: i.product.id,
-                    quantity: i.quantity,
-                    unit_price: i.unitPrice,
-                    subtotal: itemSubtotal,
-                    ibs_cbs_base: ibsCbsBase,
-                    aliquota_cbs: cbsRate,
-                    valor_cbs: valorCbs,
-                    aliquota_ibs: ibsRate,
-                    valor_ibs: valorIbs,
-                };
-            });
-            const { error: itemsError } = await supabase.from("sale_items").insert(items);
-            if (itemsError) throw itemsError;
-
-            return sale;
+            return order;
         },
-        onSuccess: (sale) => {
+        onSuccess: (order) => {
             const ticket: SaleTicket = {
-                saleId: sale.id,
+                saleId: order.id,
                 senha: saleCounter,
                 items: [...cart],
                 subtotal,
@@ -401,9 +421,11 @@ export default function PDVPublico() {
             setSaleCounter((n) => n + 1);
             setCupomOpen(true);
             setCartOpen(false);
+            setCustomerName("");
+            setCustomerPhone("");
             clearCart();
         },
-        onError: (e) => toast.error("Erro na venda: " + e.message),
+        onError: (e) => toast.error("Erro no pedido: " + e.message),
     });
 
     const paymentMethods = [
@@ -647,6 +669,25 @@ export default function PDVPublico() {
                         {/* Cart Footer */}
                         {cart.length > 0 && (
                             <div className="border-t p-4 space-y-4">
+                                {/* Customer Info */}
+                                <div className="space-y-3 p-3 bg-primary/5 rounded-lg border border-primary/10">
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-primary/70">Identificação do Pedido</p>
+                                    <div className="space-y-2">
+                                        <Input
+                                            placeholder="Seu Nome (Obrigatório)"
+                                            value={customerName}
+                                            onChange={(e) => setCustomerName(e.target.value)}
+                                            className="h-9 bg-white"
+                                        />
+                                        <Input
+                                            placeholder="Seu Telefone (Opcional)"
+                                            value={customerPhone}
+                                            onChange={(e) => setCustomerPhone(e.target.value)}
+                                            className="h-9 bg-white"
+                                        />
+                                    </div>
+                                </div>
+
                                 {/* Discount */}
                                 <div className="flex items-center gap-2">
                                     <Select value={discountType} onValueChange={(v) => setDiscountType(v as "fixed" | "percent")}>
