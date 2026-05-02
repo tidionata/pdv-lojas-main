@@ -116,8 +116,13 @@ function Cupom({ ticket, printRef }: { ticket: SaleTicket; printRef: React.RefOb
             <span className="w-16 text-right font-semibold">{fmt(item.unitPrice * item.quantity)}</span>
           </div>
           {item.selectedAdditionals && item.selectedAdditionals.length > 0 && (
-            <div className="text-[9px] text-gray-600 pl-10 italic">
-              + {item.selectedAdditionals.map(a => a.name).join(", ")}
+            <div className="text-[10px] text-gray-700 pl-8 font-medium">
+              {item.selectedAdditionals.map((a, i) => (
+                <div key={i} className="flex justify-between">
+                   <span>+ {a.name}</span>
+                   {a.price > 0 && <span>{fmt(a.price)}</span>}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -819,6 +824,11 @@ export default function PDV() {
                                 add.id ? a.id !== add.id : a.name !== add.name
                               ));
                             } else {
+                              const limit = (selectedProduct as any).max_additionals || 0;
+                              if (limit > 0 && selectedAdds.length >= limit) {
+                                toast.error(`Máximo de ${limit} acompanhamentos permitido.`);
+                                return;
+                              }
                               setSelectedAdds(prev => [...prev, add]);
                             }
                           }}
