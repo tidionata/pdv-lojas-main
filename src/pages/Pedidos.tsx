@@ -24,6 +24,7 @@ interface Order {
   payment_method: string;
   created_at: string;
   items?: OrderItem[];
+  origin?: string;
 }
 
 interface OrderItem {
@@ -185,6 +186,15 @@ function OrderCard({ order, storeId }: { order: Order; storeId: string }) {
               <div className="flex items-center gap-2">
                 <User className="h-4 w-4 text-muted-foreground shrink-0" />
                 <span className="font-bold text-sm">{order.customer_name}</span>
+                {order.origin === "public_pdv" ? (
+                  <Badge variant="outline" className="text-[9px] h-4 px-1.5 bg-blue-50 text-blue-600 border-blue-100 gap-1 font-bold">
+                    📱 Balcão
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[9px] h-4 px-1.5 bg-purple-50 text-purple-600 border-purple-100 gap-1 font-bold">
+                    🌐 Online
+                  </Badge>
+                )}
                 {order.customer_phone && (
                   <span className="text-xs text-muted-foreground flex items-center gap-1">
                     <Phone className="h-3 w-3" />{order.customer_phone}
@@ -377,6 +387,8 @@ export default function Pedidos() {
   const filtered = orders.filter(o => {
     if (filter === "active") return !["delivered", "cancelled"].includes(o.status);
     if (filter === "done") return ["delivered", "cancelled"].includes(o.status);
+    if (filter === "public_pdv") return o.origin === "public_pdv";
+    if (filter === "menu") return o.origin === "menu" || !o.origin;
     return true;
   });
 
@@ -404,15 +416,24 @@ export default function Pedidos() {
       </div>
 
       {/* Filtros */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {[
-          { key: "active", label: "Ativos" },
-          { key: "all",    label: "Todos" },
-          { key: "done",   label: "Concluídos" },
+          { key: "active",     label: "Ativos" },
+          { key: "public_pdv", label: "📱 Balcão (Mobile)" },
+          { key: "menu",       label: "🌐 Online" },
+          { key: "all",        label: "Todos" },
+          { key: "done",       label: "Concluídos" },
         ].map(f => (
-          <button key={f.key} onClick={() => setFilter(f.key)}
-            className={cn("px-4 py-1.5 rounded-full text-sm font-medium transition-colors",
-              filter === f.key ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80")}>
+          <button 
+            key={f.key} 
+            onClick={() => setFilter(f.key as any)}
+            className={cn(
+              "px-4 py-1.5 rounded-full text-sm font-medium transition-colors border",
+              filter === f.key 
+                ? "bg-primary text-primary-foreground border-primary" 
+                : "bg-white text-muted-foreground hover:bg-muted border-border"
+            )}
+          >
             {f.label}
           </button>
         ))}

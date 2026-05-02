@@ -344,6 +344,8 @@ export default function PDVPublico() {
                     total,
                     payment_method: paymentMethod,
                     status: "pending",
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    origin: "public_pdv",
                 })
                 .select("id")
                 .single();
