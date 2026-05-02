@@ -14,6 +14,100 @@ export type Database = {
   }
   public: {
     Tables: {
+      orders: {
+        Row: {
+          id: string
+          store_id: string
+          customer_name: string
+          customer_phone: string | null
+          status: string
+          total: number
+          payment_method: string
+          notes: string | null
+          origin: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          store_id: string
+          customer_name: string
+          customer_phone?: string | null
+          status?: string
+          total: number
+          payment_method: string
+          notes?: string | null
+          origin?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          store_id?: string
+          customer_name?: string
+          customer_phone?: string | null
+          status?: string
+          total?: number
+          payment_method?: string
+          notes?: string | null
+          origin?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      order_items: {
+        Row: {
+          id: string
+          order_id: string
+          product_id: string | null
+          product_name: string
+          unit_price: number
+          quantity: number
+          subtotal: number
+          additionals: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          order_id: string
+          product_id?: string | null
+          product_name: string
+          unit_price: number
+          quantity: number
+          subtotal: number
+          additionals?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          order_id?: string
+          product_id?: string | null
+          product_name?: string
+          unit_price?: number
+          quantity?: number
+          subtotal?: number
+          additionals?: Json
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       products: {
         Row: {
           active: boolean

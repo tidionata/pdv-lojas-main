@@ -262,6 +262,13 @@ function OrderCard({ order, storeId, compact }: { order: Order; storeId: string,
               {advanceMutation.isPending ? "..." : cfg.nextLabel}
             </Button>
           )}
+          {order.status === "accepted" && (
+            <Button size="sm" variant="outline" className={cn("gap-1 h-9", compact && "h-7 text-[10px]")}
+              onClick={() => window.print()}>
+              <Printer className="h-4 w-4" />
+              {!compact && "Imprimir"}
+            </Button>
+          )}
           {order.status === "pending" && (
             <Button size="sm" variant="outline" 
               className={cn("text-destructive border-destructive/30 hover:bg-red-50", compact ? "h-7 px-2" : "h-9")}
@@ -402,7 +409,10 @@ export default function Pedidos() {
   }, [storeId, queryClient]);
 
   const filtered = orders.filter(o => {
-    if (filter === "active") return !["delivered", "cancelled"].includes(o.status);
+    if (filter === "active") {
+      // Ativos: Não entregues/cancelados E que NÃO sejam do Balcão Mobile
+      return !["delivered", "cancelled"].includes(o.status) && o.origin !== "public_pdv";
+    }
     if (filter === "done") return ["delivered", "cancelled"].includes(o.status);
     if (filter === "public_pdv") return o.origin === "public_pdv";
     if (filter === "menu") return o.origin === "menu" || !o.origin;

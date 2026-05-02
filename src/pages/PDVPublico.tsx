@@ -343,7 +343,7 @@ export default function PDVPublico() {
                     customer_phone: customerPhone,
                     total,
                     payment_method: paymentMethod,
-                    status: "pending",
+                    status: "accepted", // Auto-aceito pois é feito por atendente
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     origin: "public_pdv",
                 })
