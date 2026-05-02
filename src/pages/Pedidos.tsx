@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import {
   Clock, CheckCircle2, ChefHat, PackageCheck, XCircle,
   MessageSquare, Send, User, Phone, ChevronDown, ChevronUp,
-  ShoppingBag, Bell, RefreshCw,
+  ShoppingBag, Bell, RefreshCw, LayoutList, LayoutGrid, Maximize2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -61,9 +61,9 @@ const PAYMENT_LABELS: Record<string, string> = {
   cash: "Dinheiro", pix: "PIX", credit: "Crédito", debit: "Débito", presential: "Pagar na retirada",
 };
 
-function OrderCard({ order, storeId }: { order: Order; storeId: string }) {
+function OrderCard({ order, storeId, compact }: { order: Order; storeId: string, compact?: boolean }) {
   const queryClient = useQueryClient();
-  const [expanded, setExpanded] = useState(order.status === "pending");
+  const [expanded, setExpanded] = useState(order.status === "pending" && !compact);
   const [message, setMessage] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -175,62 +175,77 @@ function OrderCard({ order, storeId }: { order: Order; storeId: string }) {
   const minutesAgo = Math.floor((Date.now() - new Date(order.created_at).getTime()) / 60000);
 
   return (
-    <div className={cn("bg-white rounded-2xl border-2 shadow-sm overflow-hidden transition-all", cfg.color,
+    <div className={cn("bg-white rounded-2xl border-2 shadow-sm overflow-hidden transition-all flex flex-col justify-between", cfg.color,
       order.status === "pending" && "ring-2 ring-amber-400 ring-offset-1")}>
 
       {/* Card Header */}
-      <div className="p-4">
+      <div className={cn(compact ? "p-3" : "p-4")}>
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-2">
-                <User className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span className="font-bold text-sm">{order.customer_name}</span>
+            <div className="flex flex-col gap-0.5 w-full">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground"># {order.id.substring(0, 4)}</span>
                 {order.origin === "public_pdv" ? (
-                  <Badge variant="outline" className="text-[9px] h-4 px-1.5 bg-blue-50 text-blue-600 border-blue-100 gap-1 font-bold">
-                    📱 Balcão
-                  </Badge>
+                  <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-blue-50 text-blue-600 border-blue-100 font-bold">📱 Balcão</Badge>
                 ) : (
-                  <Badge variant="outline" className="text-[9px] h-4 px-1.5 bg-purple-50 text-purple-600 border-purple-100 gap-1 font-bold">
-                    🌐 Online
-                  </Badge>
-                )}
-                {order.customer_phone && (
-                  <span className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Phone className="h-3 w-3" />{order.customer_phone}
-                  </span>
+                  <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-purple-50 text-purple-600 border-purple-100 font-bold">🌐 Online</Badge>
                 )}
               </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground ml-6">
-                <Clock className="h-3 w-3" />
-                <span>{minutesAgo === 0 ? "Agora mesmo" : `${minutesAgo} min atrás`}</span>
-                <span>·</span>
-                <span>{PAYMENT_LABELS[order.payment_method] ?? order.payment_method}</span>
+
+              <div className="flex items-center gap-1.5 min-w-0">
+                <User className={cn("text-muted-foreground shrink-0", compact ? "h-3 w-3" : "h-4 w-4")} />
+                <span className={cn("font-bold truncate", compact ? "text-xs" : "text-sm")}>{order.customer_name}</span>
+              </div>
+
+              {!compact && order.customer_phone && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1 ml-5">
+                  <Phone className="h-3 w-3" />{order.customer_phone}
+                </span>
+              )}
+
+              <div className={cn("flex items-center gap-2 text-muted-foreground", compact ? "text-[10px] ml-4" : "text-xs ml-6")}>
+                <Clock className={cn("shrink-0", compact ? "h-2.5 w-2.5" : "h-3 w-3")} />
+                <span>{minutesAgo === 0 ? "Agora" : `${minutesAgo}m`}</span>
+                {!compact && (
+                  <>
+                    <span>·</span>
+                    <span className="truncate">{PAYMENT_LABELS[order.payment_method] ?? order.payment_method}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full", cfg.badge)}>
-              {cfg.label}
-            </span>
-            <span className="font-bold text-sm">{fmt(order.total)}</span>
-            <button onClick={() => setExpanded(e => !e)} className="p-1 rounded hover:bg-muted">
-              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </button>
-          </div>
+          {!compact && (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full", cfg.badge)}>
+                {cfg.label}
+              </span>
+              <span className="font-bold text-sm">{fmt(order.total)}</span>
+              <button onClick={() => setExpanded(e => !e)} className="p-1 rounded hover:bg-muted">
+                {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </button>
+            </div>
+          )}
         </div>
 
+        {compact && (
+           <div className="mt-2 flex items-center justify-between border-t pt-2">
+              <span className="font-bold text-xs">{fmt(order.total)}</span>
+              <Badge className={cn("text-[9px] h-4 px-1.5", cfg.badge)}>{cfg.label}</Badge>
+           </div>
+        )}
+
         {/* Itens resumidos */}
-        <div className="mt-2 ml-6 flex flex-wrap gap-1.5">
+        <div className={cn("mt-2 flex flex-wrap gap-1", !compact && "ml-6")}>
           {items.map((item, i) => (
-            <span key={i} className="text-xs bg-muted rounded-full px-2.5 py-0.5 font-medium">
+            <span key={i} className={cn("bg-muted rounded-full px-2 py-0.5 font-medium border", compact ? "text-[9px]" : "text-xs")}>
               {item.quantity}x {item.product_name}
             </span>
           ))}
         </div>
 
-        {order.notes && (
+        {!compact && order.notes && (
           <p className="mt-2 ml-6 text-xs text-muted-foreground bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5">
             📝 {order.notes}
           </p>
@@ -239,24 +254,25 @@ function OrderCard({ order, storeId }: { order: Order; storeId: string }) {
 
       {/* Actions */}
       {order.status !== "delivered" && order.status !== "cancelled" && (
-        <div className={cn("flex gap-2 px-4 pb-3", !expanded && "pb-4")}>
+        <div className={cn("flex gap-1.5 px-3 pb-3", !expanded && "pb-3")}>
           {cfg.next && (
-            <Button size="sm" className="flex-1 h-9"
+            <Button size="sm" className={cn("flex-1", compact ? "h-7 text-[10px]" : "h-9")}
               disabled={advanceMutation.isPending}
               onClick={() => advanceMutation.mutate(cfg.next!)}>
               {advanceMutation.isPending ? "..." : cfg.nextLabel}
             </Button>
           )}
           {order.status === "pending" && (
-            <Button size="sm" variant="outline" className="h-9 text-destructive border-destructive/30 hover:bg-red-50"
+            <Button size="sm" variant="outline" 
+              className={cn("text-destructive border-destructive/30 hover:bg-red-50", compact ? "h-7 px-2" : "h-9")}
               disabled={cancelMutation.isPending}
-              onClick={() => { if (confirm("Cancelar este pedido?")) cancelMutation.mutate(); }}>
-              <XCircle className="h-4 w-4 mr-1" /> Recusar
+              onClick={() => { if (confirm("Recusar pedido?")) cancelMutation.mutate(); }}>
+              <XCircle className={cn(compact ? "h-3 w-3" : "h-4 w-4 mr-1")} />
+              {!compact && " Recusar"}
             </Button>
           )}
         </div>
       )}
-
       {/* Expanded: Itens detalhados + Chat */}
       {expanded && (
         <div className="border-t">
@@ -331,6 +347,7 @@ export default function Pedidos() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<string>("active");
+  const [layout, setLayout] = useState<"list" | "grid" | "compact">("list");
 
   // Pegar storeId do usuário
   const { data: profile } = useQuery({
@@ -410,9 +427,25 @@ export default function Pedidos() {
           </h1>
           <p className="text-muted-foreground text-sm">{activeCount} pedido{activeCount !== 1 ? "s" : ""} ativo{activeCount !== 1 ? "s" : ""}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5">
-          <RefreshCw className="h-4 w-4" /> Atualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="hidden sm:flex items-center bg-white border rounded-lg p-0.5 shadow-sm mr-2">
+            <button onClick={() => setLayout("list")} 
+              className={cn("p-1.5 rounded-md transition-all", layout === "list" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted")}>
+              <LayoutList className="h-4 w-4" title="Lista" />
+            </button>
+            <button onClick={() => setLayout("grid")} 
+              className={cn("p-1.5 rounded-md transition-all", layout === "grid" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted")}>
+              <LayoutGrid className="h-4 w-4" title="Grade" />
+            </button>
+            <button onClick={() => setLayout("compact")} 
+              className={cn("p-1.5 rounded-md transition-all", layout === "compact" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted")}>
+              <Maximize2 className="h-4 w-4 rotate-45" title="Compacto" />
+            </button>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5">
+            <RefreshCw className="h-4 w-4" /> Atualizar
+          </Button>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -454,9 +487,12 @@ export default function Pedidos() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3 pb-8">
+        <div className={cn("gap-4 pb-8 grid", 
+          layout === "list" ? "grid-cols-1" : 
+          layout === "grid" ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-3" : 
+          "grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6")}>
           {filtered.map(order => (
-            <OrderCard key={order.id} order={order} storeId={storeId} />
+            <OrderCard key={order.id} order={order} storeId={storeId} compact={layout === "compact"} />
           ))}
         </div>
       )}
