@@ -48,6 +48,64 @@ interface OrderMessage {
 const fmt = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
+function handlePrintReceipt(order: Order, items: OrderItem[], storeName: string) {
+  const w = window.open("", "_blank", "width=400,height=700");
+  if (!w) return;
+  
+  const itemsHtml = items.map(item => `
+    <div style="margin-bottom: 5px; border-bottom: 1px dashed #eee; padding-bottom: 3px;">
+      <div style="display: flex; justify-between: space-between; font-weight: bold;">
+        <span>${item.quantity}x ${item.product_name}</span>
+        <span style="margin-left: auto;">${fmt(item.subtotal)}</span>
+      </div>
+      ${item.additionals?.length > 0 ? `
+        <div style="font-size: 10px; color: #666; font-style: italic;">
+          + ${item.additionals.map((a: any) => a.name).join(", ")}
+        </div>
+      ` : ""}
+    </div>
+  `).join("");
+
+  w.document.write(`
+    <html><head><title>Pedido #${order.id.substring(0, 4)}</title>
+    <style>
+      body { margin: 0; padding: 15px; font-family: 'Courier New', Courier, monospace; font-size: 12px; line-height: 1.4; color: #000; }
+      .header { text-align: center; margin-bottom: 15px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+      .footer { margin-top: 15px; border-top: 2px solid #000; padding-top: 10px; }
+      .row { display: flex; justify-content: space-between; }
+      .bold { font-weight: bold; }
+    </style></head>
+    <body onload="window.print(); window.close();">
+      <div class="header">
+        <div style="font-size: 16px; font-weight: bold;">${storeName}</div>
+        <div>PEDIDO: #${order.id.substring(0, 4)}</div>
+        <div style="font-size: 10px;">${new Date(order.created_at).toLocaleString("pt-BR")}</div>
+      </div>
+      
+      <div style="margin-bottom: 10px;">
+        <div class="bold">CLIENTE: ${order.customer_name}</div>
+        ${order.customer_phone ? `<div>TEL: ${order.customer_phone}</div>` : ""}
+        <div>ORIGEM: ${order.origin === "public_pdv" ? "Balcão (Mobile)" : "Online"}</div>
+      </div>
+
+      <div style="margin-bottom: 10px;">
+        <div class="bold" style="border-bottom: 1px solid #000; margin-bottom: 5px;">ITENS:</div>
+        ${itemsHtml}
+      </div>
+
+      <div class="footer">
+        <div class="row"><span class="bold">TOTAL:</span> <span class="bold">${fmt(order.total)}</span></div>
+        <div class="row"><span>Pagamento:</span> <span>${PAYMENT_LABELS[order.payment_method] || order.payment_method}</span></div>
+      </div>
+      
+      ${order.notes ? `<div style="margin-top: 10px; font-size: 10px; background: #f0f0f0; padding: 5px;">OBS: ${order.notes}</div>` : ""}
+      
+      <div style="text-align: center; margin-top: 20px; font-size: 9px;">Obrigado pela preferência!</div>
+    </body></html>
+  `);
+  w.document.close();
+}
+
 const STATUS_CONFIG: Record<string, { label: string; badge: string; next?: string; nextLabel?: string; color: string }> = {
   pending:   { label: "Aguardando",  badge: "bg-gray-100 text-gray-700",    next: "accepted",  nextLabel: "✅ Aceitar",       color: "border-gray-200" },
   accepted:  { label: "Confirmado",  badge: "bg-blue-100 text-blue-700",    next: "preparing", nextLabel: "🔥 Preparando",    color: "border-blue-200" },
@@ -61,7 +119,7 @@ const PAYMENT_LABELS: Record<string, string> = {
   cash: "Dinheiro", pix: "PIX", credit: "Crédito", debit: "Débito", presential: "Pagar na retirada",
 };
 
-function OrderCard({ order, storeId, compact }: { order: Order; storeId: string, compact?: boolean }) {
+function OrderCard({ order, storeId, compact, storeName }: { order: Order; storeId: string, compact?: boolean, storeName: string }) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(order.status === "pending" && !compact);
   const [message, setMessage] = useState("");
@@ -262,9 +320,9 @@ function OrderCard({ order, storeId, compact }: { order: Order; storeId: string,
               {advanceMutation.isPending ? "..." : cfg.nextLabel}
             </Button>
           )}
-          {order.status === "accepted" && (
+          {!["delivered", "cancelled"].includes(order.status) && (
             <Button size="sm" variant="outline" className={cn("gap-1 h-9", compact && "h-7 text-[10px]")}
-              onClick={() => window.print()}>
+              onClick={() => handlePrintReceipt(order, items, storeName)}>
               <Printer className="h-4 w-4" />
               {!compact && "Imprimir"}
             </Button>
@@ -371,6 +429,17 @@ export default function Pedidos() {
   });
 
   const storeId = profile?.store_id ?? user?.id ?? "test-store";
+
+  // Buscar nome da loja para o cupom
+  const { data: store } = useQuery({
+    queryKey: ["store-info", storeId],
+    enabled: !!storeId,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("stores").select("name").eq("id", storeId).single();
+      if (error) throw error;
+      return data;
+    },
+  });
 
   // Carregar pedidos
   const { data: orders = [], isLoading, refetch } = useQuery<Order[]>({
@@ -502,7 +571,13 @@ export default function Pedidos() {
           layout === "grid" ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-3" : 
           "grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6")}>
           {filtered.map(order => (
-            <OrderCard key={order.id} order={order} storeId={storeId} compact={layout === "compact"} />
+            <OrderCard 
+              key={order.id} 
+              order={order} 
+              storeId={storeId} 
+              compact={layout === "compact"} 
+              storeName={store?.name ?? "Nossa Loja"}
+            />
           ))}
         </div>
       )}
