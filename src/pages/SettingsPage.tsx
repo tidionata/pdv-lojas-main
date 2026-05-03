@@ -816,13 +816,13 @@ export default function SettingsPage() {
                       </p>
                     </div>
 
-                    {subscription?.status === 'trialing' && (
+                    {subscription?.status === 'trialing' && subscription?.trial_ends_at && (
                       <div className="rounded-lg bg-amber-50 border border-amber-100 p-4 text-sm text-amber-800">
                         <p className="font-semibold flex items-center gap-1.5">
                           <Clock className="h-4 w-4" /> Teste Grátis Ativo
                         </p>
                         <p className="text-xs mt-1">
-                          Você tem <strong>{Math.max(0, Math.ceil((new Date(subscription.trial_ends_at!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} dias</strong> de acesso gratuito restantes. 
+                          Você tem <strong>{Math.max(0, Math.ceil((new Date(subscription.trial_ends_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} dias</strong> de acesso gratuito restantes. 
                           Assine um plano agora para não perder o acesso após o período.
                         </p>
                       </div>
