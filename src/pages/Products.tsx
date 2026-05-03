@@ -39,10 +39,10 @@ type ProductAdditional = {
   active: boolean;
 };
 
-const emptyForm: Partial<TablesInsert<"products">> & { image_url?: string, tax_ibs_cbs_classificacao?: string } = {
+const emptyForm: Partial<TablesInsert<"products">> & { image_url?: string, tax_ibs_cbs_classificacao?: string, menu_type?: string } = {
   name: "", barcode: "", category: "", description: "", image_url: "",
   cost: 0, price: 0, stock_total: 0, stock_display: 0, min_display_stock: 0, active: true,
-  tax_ibs_cbs_classificacao: "010101",
+  tax_ibs_cbs_classificacao: "010101", menu_type: "both",
 };
 
 
@@ -497,49 +497,110 @@ export default function Products() {
 
                 {/* Foto do Produto (Cardápio Online) */}
                 <div className="sm:col-span-3">
-                  <Label className="flex items-center gap-1.5">
-                    <ImageIcon className="h-3.5 w-3.5 text-primary" />
-                    Foto do Produto
-                    <span className="text-xs font-normal text-muted-foreground ml-1">— aparece no cardápio online</span>
+                  <Label className="flex items-center gap-1.5 mb-2">
+                    <ImageIcon className="h-3.5 w-3.5" /> Foto do Produto (Cardápio Online)
                   </Label>
-                  <div className="flex gap-3 items-start mt-1.5">
-                    {/* Preview */}
-                    <div className="h-20 w-20 shrink-0 rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted flex items-center justify-center overflow-hidden">
-                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                      {(form as any).image_url ? (
-                        <img
-                          src={(form as any).image_url}
-                          alt="preview"
-                          className="h-full w-full object-cover"
-                          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
-                        />
+                  <div className="flex items-start gap-4">
+                    <div className="h-20 w-20 rounded-lg border-2 border-dashed flex items-center justify-center bg-muted/30 overflow-hidden shrink-0">
+                      {form.image_url ? (
+                        <img src={form.image_url} alt="Preview" className="h-full w-full object-cover" />
                       ) : (
-                        <ImageIcon className="h-7 w-7 text-muted-foreground/40" />
+                        <ImageIcon className="h-8 w-8 text-muted-foreground/40" />
                       )}
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-1 mb-1">
-                        <Link className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">Cole o link (URL) da imagem</span>
+                    <div className="flex-1 space-y-2">
+                      <div className="flex gap-2">
+                        <Input 
+                          type="file" 
+                          accept="image/*" 
+                          className="h-9 text-xs"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            
+                            try {
+                              toast.loading("Enviando imagem...");
+                              const fileExt = file.name.split('.').pop();
+                              const fileName = `${storeId}/${Math.random()}.${fileExt}`;
+                              
+                              const { data, error } = await supabase.storage
+                                .from('product-images')
+                                .upload(fileName, file);
+
+                              if (error) throw error;
+
+                              const { data: { publicUrl } } = supabase.storage
+                                .from('product-images')
+                                .getPublicUrl(fileName);
+
+                              setField("image_url", publicUrl);
+                              toast.dismiss();
+                              toast.success("Imagem enviada!");
+                            } catch (err: any) {
+                              toast.dismiss();
+                              toast.error(`Erro ao subir imagem: ${err.message}`);
+                            }
+                          }}
+                        />
+                        {form.image_url && (
+                          <Button variant="outline" size="sm" type="button" onClick={() => setField("image_url", "")}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
-                      <Input
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        value={(form as any).image_url ?? ""}
-                        onChange={e => setField("image_url", e.target.value)}
-                        placeholder="https://exemplo.com/foto-produto.jpg"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Dica: faça upload em{" "}
-                        <a href="https://imgur.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">imgur.com</a>
-                        {" "}ou{" "}
-                        <a href="https://postimages.org" target="_blank" rel="noopener noreferrer" className="text-primary underline">postimages.org</a>
-                        {" "}e cole o link aqui.
-                      </p>
+                      <p className="text-[10px] text-muted-foreground italic">Recomendado: Imagem quadrada (500x500px) até 2MB.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Turno do Cardápio (Dia/Noite) */}
+                <div className="sm:col-span-3">
+                  <div className="p-4 rounded-xl border-2 bg-primary/5 border-primary/20 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-primary" />
+                      <Label className="font-bold text-primary">Disponibilidade no Cardápio Online</Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Escolha em qual período este produto ficará visível para os clientes.</p>
+                    
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: "morning", label: "Só de Dia", sub: "Churrascaria" },
+                        { id: "night", label: "Só de Noite", sub: "Macarrão" },
+                        { id: "both", label: "Ambos", sub: "Tempo Todo" },
+                      ].map((type) => (
+                        <button
+                          key={type.id}
+                          type="button"
+                          onClick={() => setField("menu_type", type.id)}
+                          className={cn(
+                            "flex flex-col items-center justify-center p-2 rounded-lg border-2 transition-all gap-0.5",
+                            (form as any).menu_type === type.id 
+                              ? "border-primary bg-primary text-primary-foreground" 
+                              : "border-border bg-white hover:border-primary/40"
+                          )}
+                        >
+                          <span className="text-[11px] font-bold">{type.label}</span>
+                          <span className={cn("text-[9px] opacity-70", (form as any).menu_type === type.id ? "text-white" : "text-muted-foreground")}>
+                            {type.sub}
+                          </span>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
               </div>
+            </div>
 
+            {/* ── Status e Visibilidade ───────────────────────────────── */}
+            <div>
+              <div className="flex items-center gap-4 pt-2">
+                <div className="flex items-center gap-2">
+                  <Label className="flex items-center gap-1.5 cursor-pointer">
+                    <CheckCircle className="h-4 w-4 text-emerald-500" /> Produto Ativo
+                  </Label>
+                  <Switch checked={form.active ?? true} onCheckedChange={v => setField("active", v)} />
+                </div>
+              </div>
             </div>
 
             {/* ── Tributação ────────────────────────────────────────── */}

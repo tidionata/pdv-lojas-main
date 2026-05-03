@@ -114,12 +114,24 @@ export default function Cardapio() {
 
   // Agrupado por categoria
   const categories = useMemo(() => {
-    const filtered = search.trim()
-      ? products.filter(p =>
-          p.name.toLowerCase().includes(search.toLowerCase()) ||
-          p.category?.toLowerCase().includes(search.toLowerCase())
-        )
-      : products;
+    const activeMenu = (store as any)?.active_menu_type || 'both';
+
+    const filtered = products.filter(p => {
+      // 1. Filtro de Busca
+      const matchesSearch = !search.trim() || 
+        p.name.toLowerCase().includes(search.toLowerCase()) ||
+        p.category?.toLowerCase().includes(search.toLowerCase());
+      
+      if (!matchesSearch) return false;
+
+      // 2. Filtro de Turno (Dia/Noite)
+      // Se a loja está em modo 'both', mostra tudo.
+      // Caso contrário, mostra apenas o que é 'both' ou o turno específico da loja.
+      if (activeMenu === 'both') return true;
+      
+      const prodMenu = (p as any).menu_type || 'both';
+      return prodMenu === 'both' || prodMenu === activeMenu;
+    });
 
     const map = new Map<string, Product[]>();
     filtered.forEach(p => {
@@ -128,7 +140,7 @@ export default function Cardapio() {
       map.get(cat)!.push(p);
     });
     return map;
-  }, [products, search]);
+  }, [products, search, store]);
 
   // Cart helpers
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);

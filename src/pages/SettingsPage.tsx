@@ -92,7 +92,7 @@ export default function SettingsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("stores")
-        .select("id, name")
+        .select("id, name, active_menu_type")
         .eq("id", profile!.store_id!)
         .single();
       if (error) throw error;
@@ -259,6 +259,23 @@ export default function SettingsPage() {
     toast.success("Link copiado!");
   };
 
+  // ── Mutation: trocar cardápio ativo ──────────────────────────────────────
+  const menuMutation = useMutation({
+    mutationFn: async (type: string) => {
+      if (!store?.id) throw new Error("Loja não encontrada");
+      const { error } = await supabase
+        .from("stores")
+        .update({ active_menu_type: type })
+        .eq("id", store.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["store"] });
+      toast.success("Cardápio online atualizado!");
+    },
+    onError: (e: any) => toast.error(`Erro ao trocar cardápio: ${e.message}`),
+  });
+
   // ── Componente: caixa de link ──────────────────────────────────────────────
   function LinkBox({ url }: { url: string | null }) {
     if (profileLoading) return <Skeleton className="h-10 w-full rounded-lg" />;
@@ -377,7 +394,39 @@ export default function SettingsPage() {
                 e você recebe direto na tela de <strong>Pedidos</strong>.
               </p>
               <LinkBox url={cardapioUrl} />
-              <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-sm text-emerald-700 space-y-1">
+
+              <div className="p-4 rounded-xl border-2 bg-primary/5 border-primary/20 space-y-3 mt-4">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-primary" />
+                  <Label className="font-bold text-primary text-sm uppercase tracking-wider">Qual cardápio mostrar agora?</Label>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: "morning", label: "Churrascaria", sub: "Manhã" },
+                    { id: "night", label: "Macarrão", sub: "Noite" },
+                    { id: "both", label: "Ambos", sub: "Dia Todo" },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => menuMutation.mutate(m.id)}
+                      disabled={menuMutation.isPending || (store as any)?.active_menu_type === m.id}
+                      className={cn(
+                        "flex flex-col items-center justify-center p-2.5 rounded-lg border-2 transition-all gap-0.5",
+                        (store as any)?.active_menu_type === m.id 
+                          ? "border-primary bg-primary text-primary-foreground" 
+                          : "border-border bg-white hover:border-primary/40 disabled:opacity-50"
+                      )}
+                    >
+                      <span className="text-xs font-bold">{m.label}</span>
+                      <span className={cn("text-[10px] opacity-70", (store as any)?.active_menu_type === m.id ? "text-white" : "text-muted-foreground")}>
+                        {m.sub}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-sm text-emerald-700 space-y-1 mt-4">
                 <p className="font-semibold flex items-center gap-1.5"><UtensilsCrossed className="h-4 w-4" /> Como funciona:</p>
                 <ul className="list-disc list-inside space-y-0.5 text-xs">
                   <li>Cliente acessa o link e vê o cardápio com fotos e preços</li>
