@@ -895,18 +895,35 @@ export default function PDV() {
               {(selectedProduct as any).has_additionals && productAdditionals.length > 0 && (
                 <div className="space-y-3">
                   <div className="flex justify-between items-end">
-                    <Label className="text-base">Acompanhamentos</Label>
+                    <div>
+                      <Label className="text-base">Acompanhamentos</Label>
+                      {(selectedProduct as any).max_additionals > 0 && (
+                        <p className="text-[11px] text-muted-foreground">
+                          Escolha até {(selectedProduct as any).max_additionals} {(selectedProduct as any).max_additionals === 1 ? "opção" : "opções"}
+                        </p>
+                      )}
+                    </div>
+                    <Badge variant="secondary" className="text-[11px] font-bold">
+                      {selectedAdds.length} / {(selectedProduct as any).max_additionals || "∞"}
+                    </Badge>
                   </div>
                   <div className="grid gap-2 max-h-60 overflow-y-auto pr-1">
                     {productAdditionals.map((add) => {
                       const isSelected = selectedAdds.some((a) =>
                         add.id ? a.id === add.id : a.name === add.name
                       );
+                      const maxReached = (selectedProduct as any).max_additionals > 0 && 
+                                       selectedAdds.length >= (selectedProduct as any).max_additionals;
+
                       return (
                         <div
                           key={add.id}
                           className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
-                            isSelected ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                            isSelected 
+                              ? "border-primary bg-primary/5" 
+                              : maxReached 
+                                ? "opacity-50 grayscale cursor-not-allowed" 
+                                : "hover:bg-muted/50"
                           }`}
                           onClick={() => {
                             if (isSelected) {
@@ -914,9 +931,8 @@ export default function PDV() {
                                 add.id ? a.id !== add.id : a.name !== add.name
                               ));
                             } else {
-                              const limit = (selectedProduct as any).max_additionals || 0;
-                              if (limit > 0 && selectedAdds.length >= limit) {
-                                toast.error(`Máximo de ${limit} acompanhamentos permitido.`);
+                              if (maxReached) {
+                                toast.error(`Você só pode escolher até ${(selectedProduct as any).max_additionals} acompanhamentos.`);
                                 return;
                               }
                               setSelectedAdds(prev => [...prev, add]);
@@ -925,7 +941,7 @@ export default function PDV() {
                         >
                           <span className={isSelected ? "font-semibold" : ""}>{add.name}</span>
                           <span className="text-sm font-medium text-muted-foreground">
-                            {add.price > 0 ? `+ ${formatCurrency(add.price)}` : ""}
+                            {add.price > 0 ? `+ ${formatCurrency(add.price)}` : "Grátis"}
                           </span>
                         </div>
                       );

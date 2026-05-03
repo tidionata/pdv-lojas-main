@@ -615,28 +615,49 @@ export default function Cardapio() {
                 {(selectedProduct as any).has_additionals && productAdditionals.length > 0 && (
                   <div className="space-y-3">
                     <div className="flex justify-between items-end">
-                      <label className="text-sm font-medium">Acompanhamentos</label>
+                      <div>
+                        <label className="text-sm font-medium">Acompanhamentos</label>
+                        {(selectedProduct as any).max_additionals > 0 && (
+                          <p className="text-[10px] text-muted-foreground">
+                            Escolha até {(selectedProduct as any).max_additionals} {(selectedProduct as any).max_additionals === 1 ? "opção" : "opções"}
+                          </p>
+                        )}
+                      </div>
+                      <Badge variant="secondary" className="text-[10px] font-bold">
+                        {selectedAdds.length} / {(selectedProduct as any).max_additionals || "∞"}
+                      </Badge>
                     </div>
                     <div className="grid gap-2">
                       {productAdditionals.map((add) => {
                         const isSelected = selectedAdds.some((a) => a.id === add.id);
+                        const maxReached = (selectedProduct as any).max_additionals > 0 && 
+                                         selectedAdds.length >= (selectedProduct as any).max_additionals;
+                        
                         return (
                           <div
                             key={add.id}
                             className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
-                              isSelected ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                              isSelected 
+                                ? "border-primary bg-primary/5" 
+                                : maxReached 
+                                  ? "opacity-50 grayscale cursor-not-allowed" 
+                                  : "hover:bg-muted/50"
                             }`}
                             onClick={() => {
                               if (isSelected) {
                                 setSelectedAdds(selectedAdds.filter((a) => a.id !== add.id));
                               } else {
+                                if (maxReached) {
+                                  toast.error(`Você só pode escolher até ${(selectedProduct as any).max_additionals} acompanhamentos.`);
+                                  return;
+                                }
                                 setSelectedAdds([...selectedAdds, add]);
                               }
                             }}
                           >
                             <span className={isSelected ? "font-semibold" : ""}>{add.name}</span>
                             <span className="text-sm font-medium text-muted-foreground">
-                              {add.price > 0 ? `+ ${fmt(add.price)}` : ""}
+                              {add.price > 0 ? `+ ${fmt(add.price)}` : "Grátis"}
                             </span>
                           </div>
                         );
