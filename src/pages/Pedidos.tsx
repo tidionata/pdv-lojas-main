@@ -26,6 +26,8 @@ interface Order {
   created_at: string;
   items?: OrderItem[];
   origin?: string;
+  external_id?: string;
+  external_code?: string;
 }
 
 interface OrderItem {
@@ -162,10 +164,35 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
     },
   });
 
+  // Sincronizar status com iFood
+  const ifoodMutation = useMutation({
+    mutationFn: async ({ orderId, externalId, action }: { orderId: string, externalId: string, action: string }) => {
+      const { data, error } = await supabase.functions.invoke("ifood-manager", {
+        body: { action, storeId, orderId: externalId }
+      });
+      if (error) throw error;
+      return data;
+    },
+    onError: (e) => toast.error(`Erro iFood: ${e.message}`),
+  });
+
   // Avançar status
   const advanceMutation = useMutation({
     mutationFn: async (newStatus: string) => {
       try {
+        // Se for iFood, avisa a API antes de atualizar localmente
+        if (order.origin === "ifood" && order.external_id) {
+          let ifoodAction = "";
+          if (newStatus === "accepted") ifoodAction = "confirm_order";
+          if (newStatus === "preparing") ifoodAction = "confirm_order"; // No iFood preparar costuma ser o confirmar
+          if (newStatus === "ready") ifoodAction = "ready_order";
+          if (newStatus === "delivered") ifoodAction = "dispatch_order";
+          
+          if (ifoodAction) {
+            await ifoodMutation.mutateAsync({ orderId: order.id, externalId: order.external_id, action: ifoodAction });
+          }
+        }
+
         const { error } = await (supabase as any)
           .from("orders").update({ status: newStatus }).eq("id", order.id);
         if (error) throw error;
@@ -246,6 +273,8 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
                 <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground"># {order.id?.substring(0, 4) || "????"}</span>
                 {order.origin === "public_pdv" ? (
                   <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-blue-50 text-blue-600 border-blue-100 font-bold">📱 Balcão</Badge>
+                ) : order.origin === "ifood" ? (
+                  <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-red-50 text-red-600 border-red-100 font-bold">🛵 iFood {order.external_code}</Badge>
                 ) : (
                   <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-purple-50 text-purple-600 border-purple-100 font-bold">🌐 Online</Badge>
                 )}
@@ -316,9 +345,16 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
         <div className={cn("flex gap-1.5 px-3 pb-3", !expanded && "pb-3")}>
           {cfg.next && (
             <Button size="sm" className={cn("flex-1", compact ? "h-7 text-[10px]" : "h-9")}
-              disabled={advanceMutation.isPending}
+              disabled={advanceMutation.isPending || ifoodMutation.isPending}
               onClick={() => advanceMutation.mutate(cfg.next!)}>
-              {advanceMutation.isPending ? "..." : cfg.nextLabel}
+              {advanceMutation.isPending || ifoodMutation.isPending ? "..." : cfg.nextLabel}
+            </Button>
+          )}
+          {order.origin === "ifood" && order.status === "ready" && (
+            <Button size="sm" className={cn("flex-1 bg-emerald-600 hover:bg-emerald-700", compact ? "h-7 text-[10px]" : "h-9")}
+              disabled={ifoodMutation.isPending}
+              onClick={() => advanceMutation.mutate("delivered")}>
+              {ifoodMutation.isPending ? "..." : "🚚 Despachar"}
             </Button>
           )}
           {!["delivered", "cancelled"].includes(order.status) && (
@@ -485,6 +521,7 @@ export default function Pedidos() {
     }
     if (filter === "done") return ["delivered", "cancelled"].includes(o.status);
     if (filter === "public_pdv") return o.origin === "public_pdv";
+    if (filter === "ifood") return o.origin === "ifood";
     if (filter === "menu") return o.origin === "menu" || !o.origin;
     return true;
   });
@@ -525,6 +562,16 @@ export default function Pedidos() {
           <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5">
             <RefreshCw className="h-4 w-4" /> Atualizar
           </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="text-red-600 hover:text-red-700 hover:bg-red-50 gap-1.5"
+            onClick={() => ifoodMutation.mutate({ orderId: "", externalId: "", action: "poll_events" })}
+            disabled={ifoodMutation.isPending}
+          >
+            <ShoppingBag className="h-4 w-4" />
+            {ifoodMutation.isPending ? "Sincronizando..." : "Sincronizar iFood"}
+          </Button>
         </div>
       </div>
 
@@ -533,6 +580,7 @@ export default function Pedidos() {
         {[
           { key: "active",     label: "Ativos" },
           { key: "public_pdv", label: "📱 Balcão (Mobile)" },
+          { key: "ifood",      label: "🛵 iFood" },
           { key: "menu",       label: "🌐 Online" },
           { key: "all",        label: "Todos" },
           { key: "done",       label: "Concluídos" },

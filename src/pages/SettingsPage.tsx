@@ -36,6 +36,12 @@ interface NfeConfig {
   nfce_csc_token?: string;
 }
 
+interface IfoodConfig {
+  merchant_id?: string;
+  client_id?: string;
+  client_secret?: string;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function maskCnpj(v: string) {
   return v
@@ -51,10 +57,11 @@ function maskCnpj(v: string) {
 export default function SettingsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "nfce" | "impostos" | "assinatura">("links");
+  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "nfce" | "impostos" | "assinatura" | "ifood">("links");
   const [sefazServico, setSefazServico] = useState<SefazServico>("NFeAutorizacao");
   const [showToken, setShowToken] = useState(false);
   const [nfe, setNfe] = useState<NfeConfig>({});
+  const [ifood, setIfood] = useState<IfoodConfig>({});
   const [nfeLoaded, setNfeLoaded] = useState(false);
 
   // ── Query: perfil ──────────────────────────────────────────────────────────
@@ -184,7 +191,7 @@ export default function SettingsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("store_secrets")
-        .select("id, nfe_config")
+        .select("id, nfe_config, ifood_config")
         .eq("store_id", profile!.store_id!)
         .maybeSingle();
       if (error) throw error;
@@ -194,8 +201,9 @@ export default function SettingsPage() {
 
   // Inicializa o formulário NFe quando os secrets chegarem
   useEffect(() => {
-    if (!nfeLoaded && secrets?.nfe_config) {
-      setNfe(secrets.nfe_config as NfeConfig);
+    if (!nfeLoaded && secrets) {
+      if (secrets.nfe_config) setNfe(secrets.nfe_config as NfeConfig);
+      if (secrets.ifood_config) setIfood(secrets.ifood_config as IfoodConfig);
       setNfeLoaded(true);
     }
   }, [secrets, nfeLoaded]);
@@ -216,14 +224,21 @@ export default function SettingsPage() {
         // Atualiza registro existente
         const { error } = await supabase
           .from("store_secrets")
-          .update({ nfe_config: cleanedNfe })
+          .update({ 
+            nfe_config: cleanedNfe,
+            ifood_config: ifood
+          })
           .eq("id", secrets.id);
         if (error) throw error;
       } else {
         // Cria novo registro
         const { error } = await supabase
           .from("store_secrets")
-          .insert({ store_id: store.id, nfe_config: cleanedNfe });
+          .insert({ 
+            store_id: store.id, 
+            nfe_config: cleanedNfe,
+            ifood_config: ifood
+          });
         if (error) throw error;
       }
     },
@@ -300,6 +315,7 @@ export default function SettingsPage() {
           { id: "integracoes", label: "⚙️ Integrações" },
           { id: "nfce",        label: "🧾 NFC-e" },
           { id: "impostos",    label: "⚖️ Impostos" },
+          { id: "ifood",       label: "🛵 iFood" },
           { id: "assinatura",  label: "💳 Assinatura" },
           { id: "impressora",  label: "🖨️ Impressora" },
         ] as const).map((tab) => (
@@ -783,6 +799,85 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* ── ABA: IFOOD ────────────────────────────────────────────────────────── */}
+      {activeTab === "ifood" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShoppingBag className="h-5 w-5 text-red-600" />
+              Configuração iFood
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="rounded-lg bg-red-50 border border-red-100 p-4 text-sm text-red-800">
+              <p className="font-semibold flex items-center gap-1.5">🚀 Integração em Tempo Real</p>
+              <p className="text-xs mt-1 leading-relaxed">
+                Para receber pedidos do iFood, você deve primeiro criar um App no <strong>iFood Developer Portal</strong> e obter as chaves abaixo.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label>Merchant ID (ID da Loja no iFood)</Label>
+                <Input 
+                  placeholder="Ex: 00000000-0000-0000-0000-000000000000"
+                  value={ifood.merchant_id ?? ""}
+                  onChange={e => setIfood({ ...ifood, merchant_id: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Client ID</Label>
+                <Input 
+                  placeholder="Seu Client ID do iFood"
+                  value={ifood.client_id ?? ""}
+                  onChange={e => setIfood({ ...ifood, client_id: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Client Secret</Label>
+                <div className="relative">
+                  <Input 
+                    type={showToken ? "text" : "password"}
+                    placeholder="Seu Client Secret do iFood"
+                    value={ifood.client_secret ?? ""}
+                    onChange={e => setIfood({ ...ifood, client_secret: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowToken(!showToken)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <Button 
+                className="w-full gap-2 bg-red-600 hover:bg-red-700 text-white"
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending}
+              >
+                <Save className="h-4 w-4" />
+                {saveMutation.isPending ? "Salvando..." : "Salvar Chaves iFood"}
+              </Button>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-2">
+              <h4 className="text-sm font-bold">Instruções para Teste:</h4>
+              <ul className="text-xs text-muted-foreground list-disc list-inside space-y-1">
+                <li>Habilite o "Modo Teste" no portal do iFood.</li>
+                <li>Use o endereço de teste: <strong>Ramal Bujari, 100 - Bujari</strong>.</li>
+                <li>Os pedidos aparecerão automaticamente na sua aba <strong>Pedidos</strong>.</li>
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* ── ABA: ASSINATURA ─────────────────────────────────────────────────── */}
