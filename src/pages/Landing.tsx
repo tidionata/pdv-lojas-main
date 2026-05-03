@@ -17,20 +17,20 @@ const fadeUp = {
 const plans = [
   {
     name: "Starter",
-    price: "39,90",
-    features: ["Até 150 produtos", "1 usuário", "PDV completo", "Relatórios básicos", "Suporte por email"],
+    price: "59,90",
+    features: ["Até 50 produtos", "1 usuário", "PDV completo", "Relatórios avançados", "Suporte via WhatsApp"],
     popular: false,
   },
   {
     name: "Pro",
-    price: "79,90",
-    features: ["Produtos ilimitados", "Até 3 usuários", "PDV + cupom térmico", "Relatórios avançados", "QR Pix", "Suporte prioritário"],
+    price: "89,90",
+    features: ["Até 150 produtos", "Até 3 usuários", "PDV + Cardápio online", "Atendimento via mesa", "Suporte via WhatsApp", "Pagamento Pix com QR Code"],
     popular: true,
   },
   {
     name: "Business",
-    price: "149,90",
-    features: ["Produtos ilimitados", "Usuários ilimitados", "Tudo do Pro", "Multi-loja", "API acesso", "Gerente dedicado"],
+    price: "149,99",
+    features: ["Produtos ilimitados", "Usuários ilimitados", "Tudo do plano Pro", "Multi-loja (2 lojas)", "Gerenciamento completo", "Suporte prioritário"],
     popular: false,
   },
 ];
@@ -181,7 +181,7 @@ export default function Landing() {
                   ))}
                 </ul>
                 <Button className="w-full" variant={plan.popular ? "default" : "outline"} asChild>
-                  <Link to="/auth?tab=signup">Começar agora</Link>
+                  <Link to="/auth?tab=signup">Começar 7 dias grátis</Link>
                 </Button>
               </motion.div>
             ))}
@@ -193,13 +193,13 @@ export default function Landing() {
       <section className="py-20 px-4">
         <div className="container mx-auto text-center max-w-3xl">
           <ShieldCheck className="h-16 w-16 text-primary mx-auto mb-6" />
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">Garantia total</h2>
+          <h2 className="text-3xl md:text-4xl font-bold mb-4">7 dias grátis</h2>
           <p className="text-lg text-muted-foreground mb-8">
-            Sem compromisso. Sem cartão de crédito. Se não gostar, é só cancelar.
+            Experimente todos os recursos sem compromisso. Sem cartão de crédito. Se não gostar, é só não assinar.
           </p>
           <Button size="lg" className="text-base px-8 h-12" asChild>
             <Link to="/auth?tab=signup">
-              Começar agora <ArrowRight className="ml-2 h-4 w-4" />
+              Criar conta grátis <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
           </Button>
         </div>
