@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS public.ifood_event_logs (
 -- RLS para Logs
 ALTER TABLE public.ifood_event_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "ifood_logs_owner_select" ON public.ifood_event_logs;
 CREATE POLICY "ifood_logs_owner_select" ON public.ifood_event_logs
   FOR SELECT USING (public.is_store_owner(auth.uid(), store_id));
 
