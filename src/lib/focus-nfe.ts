@@ -41,37 +41,7 @@ export interface FocusNfeSale {
 
 export async function emitirNfce(storeId: string, saleData: any) {
   try {
-    // 1. Buscar as configurações da NFe (Token e Ambiente)
-    const { data: secrets, error: secretsError } = await supabase
-      .from("store_secrets")
-      .select("nfe_config")
-      .eq("store_id", storeId)
-      .maybeSingle();
-
-    if (secretsError || !secrets?.nfe_config) {
-      throw new Error("Configurações da Focus NFe não encontradas para esta loja.");
-    }
-
-    const config = secrets.nfe_config as any;
-    if (!config.token) {
-      throw new Error("Token da Focus NFe não configurado.");
-    }
-
-    // 1.1 Buscar configurações de impostos (Reforma 2026)
-    const { data: taxConfig } = await supabase
-      .from("store_tax_config")
-      .select("cbs_rate, ibs_rate")
-      .eq("store_id", storeId)
-      .maybeSingle();
-
-    const cbsRate = Number(taxConfig?.cbs_rate ?? 0.9);
-    const ibsRate = Number(taxConfig?.ibs_rate ?? 0.1);
-
-    const baseUrl = config.ambiente === "producao" 
-      ? "https://api.focusnfe.com.br" 
-      : "https://homologacao.focusnfe.com.br";
-
-    // 2. Mapear dados da venda para o formato Focus NFe
+    // 1. Mapear dados da venda para o formato Focus NFe
     const nfePayload: FocusNfeSale = {
       data_emissao: new Date().toISOString(),
       natureza_operacao: "Venda de mercadoria",
@@ -109,8 +79,8 @@ export async function emitirNfce(storeId: string, saleData: any) {
           situacao_tributaria_ibs_cbs: "00", // Tributada integralmente
           classificacao_tributaria: item.product.tax_ibs_cbs_classificacao || "010101", // Fallback para exemplo se não configurado
           base_calculo_ibs_cbs: Number(ibsCbsBase.toFixed(2)),
-          aliquota_cbs: cbsRate,
-          aliquota_ibs: ibsRate,
+          aliquota_cbs: 0.9, 
+          aliquota_ibs: 0.1,
         };
       }),
       formas_pagamento: [
@@ -121,35 +91,18 @@ export async function emitirNfce(storeId: string, saleData: any) {
       ]
     };
 
-    // 3. Enviar para a Focus NFe via Supabase Edge Function (Proxy Seguro)
-    // Para evitar erro de CORS "Failed to fetch" e não expor o token no navegador,
-    // usamos uma Edge Function do Supabase que faz a ponte com a Focus NFe.
+    // 2. Enviar para a Focus NFe via Supabase Edge Function (Proxy Seguro)
+    // O TOKEN NÃO É ENVIADO PELO FRONTEND. A Edge Function busca o token no banco de dados
+    // usando a Service Role Key, garantindo que o caixa consiga emitir sem ver o token.
     const { data, error: functionError } = await supabase.functions.invoke("focus-nfe-proxy", {
       body: {
-        baseUrl,
-        token: config.token,
+        storeId,
         payload: nfePayload,
         ref: saleData.id
       },
     });
 
-    if (functionError) {
-      // Fallback para tentativa direta se a função não existir (apenas para debug em ambiente controlado)
-      console.warn("Edge Function não encontrada, tentando envio direto (sujeito a CORS)...");
-      
-      const response = await fetch(`${baseUrl}/v2/nfce?ref=${saleData.id}`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Basic ${btoa(config.token + ":")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(nfePayload),
-      });
-
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.mensagem || "Erro na Focus NFe");
-      return result;
-    }
+    if (functionError) throw new Error(functionError.message || "Erro no proxy de NFe");
 
     return data;
   } catch (error: any) {
