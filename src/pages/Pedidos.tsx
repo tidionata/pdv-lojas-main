@@ -229,8 +229,8 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
     },
   });
 
-  const unreadCount = messages.filter(m => m.sender === "customer").length;
-  const minutesAgo = Math.floor((Date.now() - new Date(order.created_at).getTime()) / 60000);
+  const unreadCount = (messages || []).filter(m => m.sender === "customer").length;
+  const minutesAgo = order.created_at ? Math.floor((Date.now() - new Date(order.created_at).getTime()) / 60000) : 0;
 
   return (
     <div className={cn("bg-white rounded-2xl border-2 shadow-sm overflow-hidden transition-all flex flex-col justify-between", cfg.color,
@@ -242,7 +242,7 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <div className="flex flex-col gap-0.5 w-full">
               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground"># {order.id.substring(0, 4)}</span>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground"># {order.id?.substring(0, 4) || "????"}</span>
                 {order.origin === "public_pdv" ? (
                   <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-blue-50 text-blue-600 border-blue-100 font-bold">📱 Balcão</Badge>
                 ) : (
@@ -252,7 +252,7 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
 
               <div className="flex items-center gap-1.5 min-w-0">
                 <User className={cn("text-muted-foreground shrink-0", compact ? "h-3 w-3" : "h-4 w-4")} />
-                <span className={cn("font-bold truncate", compact ? "text-xs" : "text-sm")}>{order.customer_name}</span>
+                <span className={cn("font-bold truncate", compact ? "text-xs" : "text-sm")}>{order.customer_name || "Sem nome"}</span>
               </div>
 
               {!compact && order.customer_phone && (
@@ -263,11 +263,11 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
 
               <div className={cn("flex items-center gap-2 text-muted-foreground", compact ? "text-[10px] ml-4" : "text-xs ml-6")}>
                 <Clock className={cn("shrink-0", compact ? "h-2.5 w-2.5" : "h-3 w-3")} />
-                <span>{minutesAgo === 0 ? "Agora" : `${minutesAgo}m`}</span>
+                <span>{minutesAgo <= 0 ? "Agora" : `${minutesAgo}m`}</span>
                 {!compact && (
                   <>
                     <span>·</span>
-                    <span className="truncate">{PAYMENT_LABELS[order.payment_method] ?? order.payment_method}</span>
+                    <span className="truncate">{PAYMENT_LABELS[order.payment_method] ?? order.payment_method ?? "Outro"}</span>
                   </>
                 )}
               </div>
@@ -279,7 +279,7 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
               <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full", cfg.badge)}>
                 {cfg.label}
               </span>
-              <span className="font-bold text-sm">{fmt(order.total)}</span>
+              <span className="font-bold text-sm">{fmt(order.total || 0)}</span>
               <button onClick={() => setExpanded(e => !e)} className="p-1 rounded hover:bg-muted">
                 {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </button>
@@ -289,14 +289,14 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
 
         {compact && (
            <div className="mt-2 flex items-center justify-between border-t pt-2">
-              <span className="font-bold text-xs">{fmt(order.total)}</span>
+              <span className="font-bold text-xs">{fmt(order.total || 0)}</span>
               <Badge className={cn("text-[9px] h-4 px-1.5", cfg.badge)}>{cfg.label}</Badge>
            </div>
         )}
 
         {/* Itens resumidos */}
         <div className={cn("mt-2 flex flex-wrap gap-1", !compact && "ml-6")}>
-          {items.map((item, i) => (
+          {(items || []).map((item, i) => (
             <span key={i} className={cn("bg-muted rounded-full px-2 py-0.5 font-medium border", compact ? "text-[9px]" : "text-xs")}>
               {item.quantity}x {item.product_name}
             </span>
@@ -344,14 +344,14 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
           {/* Itens detalhados */}
           <div className="p-4 space-y-1.5">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Itens do Pedido</p>
-            {items.map((item, i) => (
+            {(items || []).map((item, i) => (
               <div key={i} className="flex justify-between text-sm">
                 <span className="text-muted-foreground">{item.quantity}× {item.product_name}</span>
                 <span className="font-medium">{fmt(item.subtotal)}</span>
               </div>
             ))}
             <div className="border-t pt-1.5 flex justify-between font-bold text-sm">
-              <span>Total</span><span>{fmt(order.total)}</span>
+              <span>Total</span><span>{fmt(order.total || 0)}</span>
             </div>
           </div>
 
@@ -368,9 +368,9 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
             </div>
 
             <div className="h-40 overflow-y-auto p-3 space-y-2 bg-gray-50/50">
-              {messages.length === 0 ? (
+              {(messages || []).length === 0 ? (
                 <p className="text-xs text-center text-muted-foreground pt-4">Nenhuma mensagem ainda</p>
-              ) : messages.map(msg => (
+              ) : (messages || []).map(msg => (
                 <div key={msg.id} className={`flex ${msg.sender === "store" ? "justify-end" : "justify-start"}`}>
                   <div className={cn("max-w-[80%] rounded-xl px-3 py-2 text-xs",
                     msg.sender === "store"
@@ -381,7 +381,7 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
                     )}
                     <p>{msg.message}</p>
                     <p className={cn("text-[10px] mt-0.5", msg.sender === "store" ? "text-white/60" : "text-muted-foreground")}>
-                      {new Date(msg.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                      {msg.created_at ? new Date(msg.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "--:--"}
                     </p>
                   </div>
                 </div>

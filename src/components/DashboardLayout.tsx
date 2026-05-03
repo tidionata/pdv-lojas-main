@@ -27,8 +27,20 @@ export default function DashboardLayout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // ── Profile ──────────────────────────────────────────────────────────────
+  const { data: profile } = useQuery({
+    queryKey: ["profile", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("profiles")
+        .select("store_id").eq("auth_user_id", user!.id).single();
+      if (error) throw error;
+      return data;
+    },
+  });
+
   // Badge: pedidos pendentes
-  const storeId = user?.id ?? "";
+  const storeId = profile?.store_id ?? user?.id ?? "";
   const { data: pendingOrders = [] } = useQuery({
     queryKey: ["store-orders-pending", storeId],
     refetchInterval: 15000,
@@ -41,7 +53,7 @@ export default function DashboardLayout() {
       } catch {
         const key = `orders_offline_${storeId}`;
         const all = JSON.parse(localStorage.getItem(key) || "[]");
-        return all.filter((o: any) => o.status === "pending");
+        return Array.isArray(all) ? all.filter((o: any) => o.status === "pending") : [];
       }
     },
   });
