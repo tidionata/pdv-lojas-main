@@ -235,6 +235,11 @@ export default function Products() {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const openNew = () => {
+    if (subscription && products.length >= (subscription.max_products || 0)) {
+      toast.error(`Você atingiu o limite de ${subscription.max_products} produtos do seu plano ${subscription.plan || "atual"}.`);
+      return;
+    }
+
     setEditingId(null); setForm(emptyForm);
     setHasAdditionals(false); setMaxAdditionals(0); setAdditionals([]);
     setNewAddName(""); setNewAddPrice(0);

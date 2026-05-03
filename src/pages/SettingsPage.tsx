@@ -13,8 +13,9 @@ import {
   Link2, Store, Copy, ExternalLink, ShoppingCart,
   UtensilsCrossed, AlertCircle, RefreshCw, Eye, EyeOff,
   FileText, Save, ExternalLink as ExtLink, Shield, Radio, Printer,
-  CheckCircle2,
+  CheckCircle2, Star, Clock,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   SEFAZ_BY_UF, UF_NAMES, SERVICO_LABELS,
   type SefazServico,
@@ -49,7 +50,7 @@ function maskCnpj(v: string) {
 export default function SettingsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "nfce" | "impostos">("links");
+  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "nfce" | "impostos" | "assinatura">("links");
   const [sefazServico, setSefazServico] = useState<SefazServico>("NFeAutorizacao");
   const [showToken, setShowToken] = useState(false);
   const [nfe, setNfe] = useState<NfeConfig>({});
@@ -138,6 +139,41 @@ export default function SettingsPage() {
       toast.success("Configurações de impostos atualizadas!");
     },
     onError: (e: any) => toast.error(`Erro ao salvar impostos: ${e.message}`),
+  });
+
+  // ── Query: assinatura (Stripe) ─────────────────────────────────────────────
+  const { data: subscription, isLoading: subLoading } = useQuery({
+    queryKey: ["subscription", profile?.store_id],
+    enabled: !!profile?.store_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("subscriptions")
+        .select("*")
+        .eq("store_id", profile!.store_id!)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // ── Mutation: criar checkout stripe ─────────────────────────────────────────
+  const checkoutMutation = useMutation({
+    mutationFn: async (plan: string) => {
+      if (!profile?.store_id) throw new Error("Loja não encontrada");
+
+      const { data, error } = await supabase.functions.invoke("stripe-checkout", {
+        body: { 
+          plan, 
+          storeId: profile.store_id,
+          successUrl: `${window.location.origin}/dashboard/settings?activeTab=assinatura&success=true`,
+          cancelUrl: `${window.location.origin}/dashboard/settings?activeTab=assinatura&cancel=true`,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.url) window.location.href = data.url;
+    },
+    onError: (e: any) => toast.error(`Erro ao iniciar pagamento: ${e.message}`),
   });
 
   // ── Query: store_secrets (só o owner acessa — token NFe isolado) ────────────
@@ -263,6 +299,7 @@ export default function SettingsPage() {
           { id: "integracoes", label: "⚙️ Integrações" },
           { id: "nfce",        label: "🧾 NFC-e" },
           { id: "impostos",    label: "⚖️ Impostos" },
+          { id: "assinatura",  label: "💳 Assinatura" },
           { id: "impressora",  label: "🖨️ Impressora" },
         ] as const).map((tab) => (
           <button
@@ -742,6 +779,149 @@ export default function SettingsPage() {
                 <Save className="h-4 w-4" />
                 {taxMutation.isPending ? "Salvando..." : "Salvar Alíquotas"}
               </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ── ABA: ASSINATURA ─────────────────────────────────────────────────── */}
+      {activeTab === "assinatura" && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Star className="h-5 w-5 text-primary" />
+                Sua Assinatura
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {subLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-1/3" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+              ) : (
+                <div className="grid gap-6 sm:grid-cols-2">
+                  <div className="space-y-4">
+                    <div>
+                      <Label className="text-muted-foreground uppercase text-[10px] font-bold tracking-wider">Plano Atual</Label>
+                      <p className="text-2xl font-bold capitalize">
+                        {subscription?.plan || "Nenhum"}
+                        {subscription?.status === 'trialing' && (
+                          <Badge variant="secondary" className="ml-2 bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200">Período de Teste</Badge>
+                        )}
+                        {subscription?.status === 'active' && (
+                          <Badge variant="secondary" className="ml-2 bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-emerald-200">Ativa</Badge>
+                        )}
+                      </p>
+                    </div>
+
+                    {subscription?.status === 'trialing' && (
+                      <div className="rounded-lg bg-amber-50 border border-amber-100 p-4 text-sm text-amber-800">
+                        <p className="font-semibold flex items-center gap-1.5">
+                          <Clock className="h-4 w-4" /> Teste Grátis Ativo
+                        </p>
+                        <p className="text-xs mt-1">
+                          Você tem <strong>{Math.max(0, Math.ceil((new Date(subscription.trial_ends_at!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} dias</strong> de acesso gratuito restantes. 
+                          Assine um plano agora para não perder o acesso após o período.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-4 border-l pl-6 hidden sm:block">
+                    <div>
+                      <Label className="text-muted-foreground uppercase text-[10px] font-bold tracking-wider">Expiração / Renovação</Label>
+                      <p className="text-sm font-medium mt-1 text-gray-700">
+                        {subscription?.trial_ends_at 
+                          ? new Date(subscription.trial_ends_at).toLocaleDateString('pt-BR') 
+                          : "Não disponível"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <Separator />
+
+              <h3 className="font-bold text-lg">Trocar ou Assinar Plano</h3>
+              <p className="text-sm text-muted-foreground -mt-4">Escolha o plano ideal para o seu negócio e faça o upgrade instantaneamente.</p>
+              <div className="grid gap-4 sm:grid-cols-3">
+                {[
+                  { 
+                    id: "starter", 
+                    name: "Starter", 
+                    price: "59,90", 
+                    items: "50 prod.", 
+                    user: "1 usuário",
+                    description: "Ideal para começar"
+                  },
+                  { 
+                    id: "pro", 
+                    name: "Pro", 
+                    price: "89,90", 
+                    items: "150 prod.", 
+                    user: "3 usuários",
+                    description: "O melhor custo-benefício"
+                  },
+                  { 
+                    id: "business", 
+                    name: "Business", 
+                    price: "149,99", 
+                    items: "Ilimitado", 
+                    user: "Ilimitado",
+                    description: "Para grandes operações"
+                  },
+                ].map((p) => (
+                  <div key={p.id} className={cn(
+                    "relative p-5 rounded-2xl border-2 transition-all flex flex-col gap-4 shadow-sm",
+                    subscription?.plan === p.id 
+                      ? "border-primary bg-primary/5 ring-1 ring-primary/20" 
+                      : "border-border hover:border-primary/40 hover:shadow-md bg-card"
+                  )}>
+                    {subscription?.plan === p.id && (
+                      <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
+                        Plano Atual
+                      </span>
+                    )}
+                    
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-lg">{p.name}</h4>
+                      <p className="text-[11px] text-muted-foreground leading-tight">{p.description}</p>
+                    </div>
+
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-2xl font-black text-foreground">R${p.price}</span>
+                      <span className="text-xs text-muted-foreground">/mês</span>
+                    </div>
+
+                    <ul className="space-y-2 flex-1">
+                      <li className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-primary shrink-0" /> {p.items}
+                      </li>
+                      <li className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-primary shrink-0" /> {p.user}
+                      </li>
+                    </ul>
+
+                    <Button 
+                      className={cn(
+                        "w-full font-bold transition-all",
+                        subscription?.plan === p.id ? "bg-muted text-muted-foreground" : "hover:scale-[1.02] active:scale-[0.98]"
+                      )}
+                      variant={subscription?.plan === p.id ? "secondary" : "default"}
+                      disabled={checkoutMutation.isPending || subscription?.plan === p.id}
+                      onClick={() => checkoutMutation.mutate(p.id)}
+                    >
+                      {checkoutMutation.isPending 
+                        ? "Carregando..." 
+                        : subscription?.plan === p.id 
+                          ? "Plano Ativo" 
+                          : "Assinar Agora"}
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </div>
