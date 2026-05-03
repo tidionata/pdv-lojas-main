@@ -10,6 +10,7 @@ import {
   Clock, CheckCircle2, ChefHat, PackageCheck, XCircle,
   MessageSquare, Send, User, Phone, ChevronDown, ChevronUp,
   ShoppingBag, Bell, RefreshCw, LayoutList, LayoutGrid, Maximize2,
+  Printer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
