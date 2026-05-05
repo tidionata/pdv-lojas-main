@@ -24,8 +24,8 @@ interface CartItem {
   unitPrice: number;
 }
 
-const fmt = (v: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+const fmt = (v: any) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v) || 0);
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Aguardando confirmação",

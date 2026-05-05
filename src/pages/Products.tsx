@@ -46,8 +46,8 @@ const emptyForm: Partial<TablesInsert<"products">> & { image_url?: string, tax_i
 };
 
 
-const fmt = (v: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+const fmt = (v: any) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v) || 0);
 
 export default function Products() {
   const { user } = useAuth();
@@ -336,11 +336,15 @@ export default function Products() {
 
   // ── Filter ────────────────────────────────────────────────────────────────
   const filtered = useMemo(() =>
-    products.filter(p =>
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.barcode?.toLowerCase().includes(search.toLowerCase()) ||
-      p.category?.toLowerCase().includes(search.toLowerCase())
-    ), [products, search]);
+    products.filter(p => {
+      if (!p) return false;
+      const searchLower = search.toLowerCase();
+      return (
+        (p.name?.toLowerCase() || "").includes(searchLower) ||
+        (p.barcode?.toLowerCase() || "").includes(searchLower) ||
+        (p.category?.toLowerCase() || "").includes(searchLower)
+      );
+    }), [products, search]);
 
   // ── Margin calc ───────────────────────────────────────────────────────────
   const margin = form.cost && form.cost > 0 && form.price && form.price > 0

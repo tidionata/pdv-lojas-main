@@ -48,8 +48,8 @@ interface OrderMessage {
   created_at: string;
 }
 
-const fmt = (v: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+const fmt = (v: any) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v) || 0);
 
 function handlePrintReceipt(order: Order, items: OrderItem[], storeName: string) {
   const w = window.open("", "_blank", "width=400,height=700");
@@ -515,6 +515,7 @@ export default function Pedidos() {
   }, [storeId, queryClient]);
 
   const filtered = orders.filter(o => {
+    if (!o) return false;
     if (filter === "active") {
       // Ativos: Não entregues/cancelados E que NÃO sejam do Balcão Mobile
       return !["delivered", "cancelled"].includes(o.status) && o.origin !== "public_pdv";
@@ -526,8 +527,8 @@ export default function Pedidos() {
     return true;
   });
 
-  const pendingCount = orders.filter(o => o.status === "pending").length;
-  const activeCount = orders.filter(o => !["delivered", "cancelled"].includes(o.status)).length;
+  const pendingCount = orders.filter(o => o?.status === "pending").length;
+  const activeCount = orders.filter(o => o && !["delivered", "cancelled"].includes(o.status)).length;
 
   return (
     <div className="space-y-5">
