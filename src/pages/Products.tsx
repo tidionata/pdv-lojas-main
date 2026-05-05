@@ -234,6 +234,23 @@ export default function Products() {
 
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Subscription limits ───────────────────────────────────────────────────
+  const { data: subscription } = useQuery({
+    queryKey: ["store_subscription_status", storeId],
+    enabled: !!storeId && storeId !== "test-store",
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("store_subscription_status" as any)
+        .select("*")
+        .eq("store_id", storeId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
   const openNew = () => {
     if (subscription && products.length >= (subscription.max_products || 0)) {
       toast.error(`Você atingiu o limite de ${subscription.max_products} produtos do seu plano ${subscription.plan || "atual"}.`);
