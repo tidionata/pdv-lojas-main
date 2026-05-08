@@ -48,6 +48,19 @@ interface OrderMessage {
   created_at: string;
 }
 
+const STATUS_CONFIG: Record<string, { label: string; badge: string; next?: string; nextLabel?: string; color: string }> = {
+  pending:   { label: "Aguardando",  badge: "bg-gray-100 text-gray-700",    next: "accepted",  nextLabel: "✅ Aceitar",       color: "border-gray-200" },
+  accepted:  { label: "Confirmado",  badge: "bg-blue-100 text-blue-700",    next: "preparing", nextLabel: "🔥 Preparando",    color: "border-blue-200" },
+  preparing: { label: "Preparando",  badge: "bg-amber-100 text-amber-700",  next: "ready",     nextLabel: "🎉 Ficou Pronto",  color: "border-amber-200" },
+  ready:     { label: "Pronto",      badge: "bg-emerald-100 text-emerald-700", next: "delivered", nextLabel: "📦 Entregue",  color: "border-emerald-200" },
+  delivered: { label: "Entregue",    badge: "bg-emerald-200 text-emerald-800",                                               color: "border-emerald-300" },
+  cancelled: { label: "Cancelado",   badge: "bg-red-100 text-red-700",                                                       color: "border-red-200" },
+};
+
+const PAYMENT_LABELS: Record<string, string> = {
+  cash: "Dinheiro", pix: "PIX", credit: "Crédito", debit: "Débito", presential: "Pagar na retirada",
+};
+
 const fmt = (v: any) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v) || 0);
 
@@ -69,8 +82,10 @@ function handlePrintReceipt(order: Order, items: OrderItem[], storeName: string)
     </div>
   `).join("");
 
+  const orderShortId = order.id?.substring(0, 4) || "????";
+
   w.document.write(`
-    <html><head><title>Pedido #${order.id.substring(0, 4)}</title>
+    <html><head><title>Pedido #${orderShortId}</title>
     <style>
       body { margin: 0; padding: 15px; font-family: 'Courier New', Courier, monospace; font-size: 12px; line-height: 1.4; color: #000; }
       .header { text-align: center; margin-bottom: 15px; border-bottom: 2px solid #000; padding-bottom: 10px; }
@@ -81,12 +96,12 @@ function handlePrintReceipt(order: Order, items: OrderItem[], storeName: string)
     <body onload="window.print(); window.close();">
       <div class="header">
         <div style="font-size: 16px; font-weight: bold;">${storeName}</div>
-        <div>PEDIDO: #${order.id.substring(0, 4)}</div>
-        <div style="font-size: 10px;">${new Date(order.created_at).toLocaleString("pt-BR")}</div>
+        <div>PEDIDO: #${orderShortId}</div>
+        <div style="font-size: 10px;">${order.created_at ? new Date(order.created_at).toLocaleString("pt-BR") : "--/--"}</div>
       </div>
       
       <div style="margin-bottom: 10px;">
-        <div class="bold">CLIENTE: ${order.customer_name}</div>
+        <div class="bold">CLIENTE: ${order.customer_name || "Sem nome"}</div>
         ${order.customer_phone ? `<div>TEL: ${order.customer_phone}</div>` : ""}
         <div>ORIGEM: ${order.origin === "public_pdv" ? "Balcão (Mobile)" : "Online"}</div>
       </div>
@@ -98,7 +113,7 @@ function handlePrintReceipt(order: Order, items: OrderItem[], storeName: string)
 
       <div class="footer">
         <div class="row"><span class="bold">TOTAL:</span> <span class="bold">${fmt(order.total)}</span></div>
-        <div class="row"><span>Pagamento:</span> <span>${PAYMENT_LABELS[order.payment_method] || order.payment_method}</span></div>
+        <div class="row"><span>Pagamento:</span> <span>${PAYMENT_LABELS[order.payment_method] || order.payment_method || "---"}</span></div>
       </div>
       
       ${order.notes ? `<div style="margin-top: 10px; font-size: 10px; background: #f0f0f0; padding: 5px;">OBS: ${order.notes}</div>` : ""}
@@ -108,19 +123,6 @@ function handlePrintReceipt(order: Order, items: OrderItem[], storeName: string)
   `);
   w.document.close();
 }
-
-const STATUS_CONFIG: Record<string, { label: string; badge: string; next?: string; nextLabel?: string; color: string }> = {
-  pending:   { label: "Aguardando",  badge: "bg-gray-100 text-gray-700",    next: "accepted",  nextLabel: "✅ Aceitar",       color: "border-gray-200" },
-  accepted:  { label: "Confirmado",  badge: "bg-blue-100 text-blue-700",    next: "preparing", nextLabel: "🔥 Preparando",    color: "border-blue-200" },
-  preparing: { label: "Preparando",  badge: "bg-amber-100 text-amber-700",  next: "ready",     nextLabel: "🎉 Ficou Pronto",  color: "border-amber-200" },
-  ready:     { label: "Pronto",      badge: "bg-emerald-100 text-emerald-700", next: "delivered", nextLabel: "📦 Entregue",  color: "border-emerald-200" },
-  delivered: { label: "Entregue",    badge: "bg-emerald-200 text-emerald-800",                                               color: "border-emerald-300" },
-  cancelled: { label: "Cancelado",   badge: "bg-red-100 text-red-700",                                                       color: "border-red-200" },
-};
-
-const PAYMENT_LABELS: Record<string, string> = {
-  cash: "Dinheiro", pix: "PIX", credit: "Crédito", debit: "Débito", presential: "Pagar na retirada",
-};
 
 function OrderCard({ order, storeId, compact, storeName }: { order: Order; storeId: string, compact?: boolean, storeName: string }) {
   const queryClient = useQueryClient();
