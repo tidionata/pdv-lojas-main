@@ -23,8 +23,10 @@ import {
   Plus, Pencil, Trash2, Search, Package, Settings2,
   Tag, DollarSign, Boxes, ScanBarcode, List,
   CirclePlus, GripVertical, CheckCircle, ImageIcon, Link,
-  CheckCircle2,
+  CheckCircle2, Clock,
 } from "lucide-react";
+
+import { cn } from "@/lib/utils";
 
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 
@@ -274,6 +276,8 @@ export default function Products() {
       image_url: (p as any).image_url ?? "",
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tax_ibs_cbs_classificacao: (p as any).tax_ibs_cbs_classificacao ?? "",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      menu_type: (p as any).menu_type ?? "both",
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -529,12 +533,13 @@ export default function Products() {
                         <ImageIcon className="h-8 w-8 text-muted-foreground/40" />
                       )}
                     </div>
-                    <div className="flex-1 space-y-2">
-                      <div className="flex gap-2">
+                    <div className="flex-1 space-y-3">
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground mb-1.5">Opção 1: Fazer upload do computador</p>
                         <Input 
                           type="file" 
                           accept="image/*" 
-                          className="h-9 text-xs"
+                          className="h-9 text-xs cursor-pointer"
                           onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (!file) return;
@@ -563,12 +568,26 @@ export default function Products() {
                             }
                           }}
                         />
-                        {form.image_url && (
-                          <Button variant="outline" size="sm" type="button" onClick={() => setField("image_url", "")}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
                       </div>
+                      
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground mb-1.5">Opção 2: Colar um link da internet</p>
+                        <div className="flex gap-2">
+                          <Input
+                            type="text"
+                            placeholder="https://exemplo.com/foto.jpg"
+                            value={form.image_url ?? ""}
+                            onChange={(e) => setField("image_url", e.target.value)}
+                            className="h-9 text-xs"
+                          />
+                          {form.image_url && (
+                            <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" type="button" onClick={() => setField("image_url", "")}>
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      
                       <p className="text-[10px] text-muted-foreground italic">Recomendado: Imagem quadrada (500x500px) até 2MB.</p>
                     </div>
                   </div>

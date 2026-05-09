@@ -16,10 +16,11 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { QRCodeSVG } from "qrcode.react";
 import {
   ShoppingCart, Search, Plus, Minus, Trash2, CreditCard,
   Banknote, QrCode, Receipt, Percent, DollarSign, X, Printer,
-  CheckCircle2,
+  CheckCircle2, Image as ImageIcon,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -50,6 +51,7 @@ interface SaleTicket {
   createdAt: Date;
   nfceKey?: string;
   nfceUrl?: string;
+  trackingUrl?: string;
 }
 
 const fmt = (v: number) =>
@@ -190,6 +192,17 @@ function Cupom({ ticket, printRef }: { ticket: SaleTicket; printRef: React.RefOb
         <p>VND: {String(ticket.saleId?.slice(-4) ?? "0000").toUpperCase()}</p>
         <p className="font-bold">SENHA :{String(ticket.senha).padStart(3, "0")}</p>
       </div>
+
+      {ticket.trackingUrl && (
+        <>
+          <div className="border-t border-dashed border-black my-1" />
+          <div className="flex flex-col items-center text-center space-y-1 my-2">
+            <p className="font-bold text-[12px] uppercase">Acompanhe seu pedido</p>
+            <QRCodeSVG value={ticket.trackingUrl} size={100} level="M" />
+            <p className="text-[9px] mt-1 text-gray-700">Aponte a câmera do celular</p>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -273,7 +286,6 @@ function CupomModal({
 }
 
 import { emitirNfce } from "@/lib/focus-nfe";
-import { Checkbox } from "@/components/ui/checkbox";
 
 // ─── PDV Principal ────────────────────────────────────────────────────────────
 export default function PDV() {
@@ -383,15 +395,24 @@ export default function PDV() {
 
   // Filtered products
   const filtered = useMemo(() => {
-    if (!search.trim()) return products.slice(0, 20);
+    const activeMenu = (store as any)?.active_menu_type || 'both';
+    
+    const menuFiltered = products.filter(p => {
+      if (activeMenu === 'both') return true;
+      const prodMenu = (p as any).menu_type || 'both';
+      return prodMenu === 'both' || prodMenu === activeMenu;
+    });
+
+    if (!search.trim()) return menuFiltered.slice(0, 20);
+    
     const q = search.toLowerCase();
-    return products.filter(
+    return menuFiltered.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.barcode?.toLowerCase().includes(q) ||
         p.category?.toLowerCase().includes(q)
     );
-  }, [products, search]);
+  }, [products, search, store]);
 
   // Additionals for modal
   const { data: productAdditionals = [] } = useQuery({
@@ -576,7 +597,39 @@ export default function PDV() {
         }
       }
 
-      return { id: saleId, nfce: nfceData };
+      let trackingUrl: string | undefined;
+      if (localStorage.getItem("pdv_tracking_qr") === "true" && isValidUUID(storeId)) {
+        const { data: orderData, error: orderError } = await supabase
+          .from("orders")
+          .insert({
+            store_id: storeId,
+            customer_name: "Cliente PDV",
+            status: "preparing",
+            total,
+            payment_method: paymentMethod,
+            origin: "pdv"
+          })
+          .select("id")
+          .single();
+        if (!orderError && orderData) {
+          trackingUrl = `${window.location.origin}/pedido/${orderData.id}`;
+          const orderItems = cart.map((i) => ({
+             order_id: orderData.id,
+             product_id: isValidUUID(i.product.id) ? i.product.id : null,
+             product_name: i.product.name,
+             unit_price: i.unitPrice,
+             quantity: i.quantity,
+             subtotal: i.unitPrice * i.quantity,
+             additionals: i.selectedAdditionals ?? []
+          }));
+          await supabase.from("order_items").insert(orderItems);
+        } else if (orderError) {
+          console.error("Erro ao gerar link de rastreio:", orderError);
+          toast.error("Erro ao gerar link de rastreio: " + orderError.message);
+        }
+      }
+
+      return { id: saleId, nfce: nfceData, trackingUrl };
     },
     onSuccess: (result) => {
       // Monta o ticket do cupom
@@ -596,6 +649,7 @@ export default function PDV() {
         createdAt: new Date(),
         nfceKey: result.nfce?.chave_nfe,
         nfceUrl: result.nfce?.caminho_xml_nota_fiscal,
+        trackingUrl: result.trackingUrl,
       };
       setLastTicket(ticket);
       setSaleCounter((n) => n + 1);
@@ -640,25 +694,35 @@ export default function PDV() {
                 <button
                   key={p.id}
                   onClick={() => handleProductClick(p)}
-                  className="flex flex-col items-start p-3 rounded-lg border border-border bg-card hover:bg-accent/50 hover:border-primary/30 transition-colors text-left"
+                  className="flex flex-col p-0 rounded-lg border border-border bg-card hover:bg-accent/50 hover:border-primary/30 transition-colors text-left overflow-hidden relative"
                 >
-                  <span className="font-medium text-sm line-clamp-2">{p.name}</span>
-                  <div className="flex gap-2">
-                    {p.barcode && (
-                      <span className="text-xs text-muted-foreground mt-0.5">{p.barcode}</span>
-                    )}
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    {(p as any).unit && (p as any).unit !== "UN" && (
-                      <span className="text-[10px] text-blue-600 font-semibold mt-0.5">{(p as any).unit}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between w-full mt-2">
-                    <span className="text-sm font-bold text-primary">
-                      {formatCurrency(p.price)}
-                    </span>
-                    <Badge variant="secondary" className="text-xs">
-                      {p.stock_display} {(p as any).unit ?? "un"}
-                    </Badge>
+                  {(p as any).image_url ? (
+                    <div className="w-full h-24 sm:h-28 bg-muted shrink-0 border-b border-border/50">
+                      <img src={(p as any).image_url} alt={p.name} className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="w-full h-24 sm:h-28 bg-muted/30 shrink-0 flex items-center justify-center border-b border-border/50">
+                      <ImageIcon className="h-8 w-8 text-muted-foreground/20" />
+                    </div>
+                  )}
+                  <div className="p-3 flex flex-col flex-1 w-full">
+                    <span className="font-medium text-sm line-clamp-2">{p.name}</span>
+                    <div className="flex gap-2 mt-0.5">
+                      {p.barcode && (
+                        <span className="text-xs text-muted-foreground">{p.barcode}</span>
+                      )}
+                      {(p as any).unit && (p as any).unit !== "UN" && (
+                        <span className="text-[10px] text-blue-600 font-semibold">{(p as any).unit}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between w-full mt-auto pt-2">
+                      <span className="text-sm font-bold text-primary">
+                        {formatCurrency(p.price)}
+                      </span>
+                      <Badge variant="secondary" className="text-[10px] sm:text-xs">
+                        {p.stock_display} {(p as any).unit ?? "un"}
+                      </Badge>
+                    </div>
                   </div>
                 </button>
               ))}

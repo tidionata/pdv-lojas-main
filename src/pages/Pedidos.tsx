@@ -103,7 +103,7 @@ function handlePrintReceipt(order: Order, items: OrderItem[], storeName: string)
       <div style="margin-bottom: 10px;">
         <div class="bold">CLIENTE: ${order.customer_name || "Sem nome"}</div>
         ${order.customer_phone ? `<div>TEL: ${order.customer_phone}</div>` : ""}
-        <div>ORIGEM: ${order.origin === "public_pdv" ? "Balcão (Mobile)" : "Online"}</div>
+        <div>ORIGEM: ${order.origin === "public_pdv" ? "Balcão (Mobile)" : order.origin === "pdv" ? "PDV (Caixa)" : order.origin === "ifood" ? "iFood" : "Online"}</div>
       </div>
 
       <div style="margin-bottom: 10px;">
@@ -275,6 +275,8 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
                 <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground"># {order.id?.substring(0, 4) || "????"}</span>
                 {order.origin === "public_pdv" ? (
                   <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-blue-50 text-blue-600 border-blue-100 font-bold">📱 Balcão</Badge>
+                ) : order.origin === "pdv" ? (
+                  <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-teal-50 text-teal-600 border-teal-100 font-bold">🛒 PDV</Badge>
                 ) : order.origin === "ifood" ? (
                   <Badge variant="outline" className="text-[8px] h-3.5 px-1 bg-red-50 text-red-600 border-red-100 font-bold">🛵 iFood {order.external_code}</Badge>
                 ) : (
@@ -516,6 +518,22 @@ export default function Pedidos() {
     } catch { /* offline */ }
   }, [storeId, queryClient]);
 
+  // Sincronizar status com iFood (Global)
+  const ifoodMutation = useMutation({
+    mutationFn: async ({ orderId, externalId, action }: { orderId?: string, externalId?: string, action: string }) => {
+      const { data, error } = await supabase.functions.invoke("ifood-manager", {
+        body: { action, storeId, orderId: externalId }
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["store-orders", storeId] });
+      toast.success("Sincronização iFood concluída");
+    },
+    onError: (e) => toast.error(`Erro iFood: ${e.message}`),
+  });
+
   const filtered = orders.filter(o => {
     if (!o) return false;
     if (filter === "active") {
@@ -524,6 +542,7 @@ export default function Pedidos() {
     }
     if (filter === "done") return ["delivered", "cancelled"].includes(o.status);
     if (filter === "public_pdv") return o.origin === "public_pdv";
+    if (filter === "pdv") return o.origin === "pdv";
     if (filter === "ifood") return o.origin === "ifood";
     if (filter === "menu") return o.origin === "menu" || !o.origin;
     return true;
@@ -582,6 +601,7 @@ export default function Pedidos() {
       <div className="flex flex-wrap gap-2">
         {[
           { key: "active",     label: "Ativos" },
+          { key: "pdv",        label: "🛒 PDV" },
           { key: "public_pdv", label: "📱 Balcão (Mobile)" },
           { key: "ifood",      label: "🛵 iFood" },
           { key: "menu",       label: "🌐 Online" },

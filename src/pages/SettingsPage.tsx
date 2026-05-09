@@ -14,7 +14,7 @@ import {
   Link2, Store, Copy, ExternalLink, ShoppingCart,
   UtensilsCrossed, AlertCircle, RefreshCw, Eye, EyeOff,
   FileText, Save, ExternalLink as ExtLink, Shield, Radio, Printer,
-  CheckCircle2, Star, Clock,
+  CheckCircle2, Star, Clock, ShoppingBag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -335,6 +335,7 @@ export default function SettingsPage() {
           { id: "ifood",       label: "🛵 iFood" },
           { id: "assinatura",  label: "💳 Assinatura" },
           { id: "impressora",  label: "🖨️ Impressora" },
+          { id: "pdv",         label: "🛒 PDV" },
         ] as const).map((tab) => (
           <button
             key={tab.id}
@@ -1142,6 +1143,43 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       )}
+      {/* ── ABA: PDV ────────────────────────────────────────────────────────── */}
+      {activeTab === "pdv" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShoppingCart className="h-5 w-5 text-primary" />
+              Configurações do PDV
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-3">
+              <h3 className="font-semibold">Rastreio de Pedido (QR Code)</h3>
+              <p className="text-sm text-muted-foreground">
+                Gere um QR Code no cupom fiscal impresso, permitindo que o cliente acompanhe o status do pedido.
+              </p>
+              
+              <div className="flex items-center gap-2 mt-2">
+                <input 
+                  type="checkbox" 
+                  id="qrTrack" 
+                  className="w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary"
+                  checked={localStorage.getItem("pdv_tracking_qr") === "true"}
+                  onChange={(e) => {
+                    localStorage.setItem("pdv_tracking_qr", e.target.checked ? "true" : "false");
+                    setNfe({ ...nfe });
+                    toast.success(e.target.checked ? "QR Code de rastreio ativado!" : "QR Code de rastreio desativado!");
+                  }}
+                />
+                <Label htmlFor="qrTrack" className="font-medium cursor-pointer">
+                  Gerar QR Code de acompanhamento no cupom
+                </Label>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
     </div>
   );
 }
