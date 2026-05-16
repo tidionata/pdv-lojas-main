@@ -410,7 +410,7 @@ export default function Products() {
                       <TableCell>
                         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                         {(p as any).image_url ? (
-                          <img src={(p as any).image_url} alt={p.name}
+                          <img src={(p as any).image_url} alt={p.name} referrerPolicy="no-referrer"
                             className="h-10 w-10 rounded-lg object-cover border" />
                         ) : (
                           <div className="h-10 w-10 rounded-lg border bg-muted flex items-center justify-center">
@@ -528,7 +528,7 @@ export default function Products() {
                   <div className="flex items-start gap-4">
                     <div className="h-20 w-20 rounded-lg border-2 border-dashed flex items-center justify-center bg-muted/30 overflow-hidden shrink-0">
                       {form.image_url ? (
-                        <img src={form.image_url} alt="Preview" className="h-full w-full object-cover" />
+                        <img src={form.image_url} alt="Preview" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
                       ) : (
                         <ImageIcon className="h-8 w-8 text-muted-foreground/40" />
                       )}

@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import {
     ShoppingCart, Search, Plus, Minus, Trash2, CreditCard,
     Banknote, QrCode, Receipt, Percent, DollarSign, X,
-    CheckCircle2, Printer, Store,
+    CheckCircle2, Printer, Store, UtensilsCrossed,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import {
@@ -172,6 +172,8 @@ export default function PDVPublico() {
     const [saleCounter, setSaleCounter] = useState(1);
     const [customerName, setCustomerName] = useState("");
     const [customerPhone, setCustomerPhone] = useState("");
+    const [deliveryType, setDeliveryType] = useState<"local" | "retirada" | "entrega">("local");
+    const [deliveryAddress, setDeliveryAddress] = useState("");
     const searchRef = useRef<HTMLInputElement>(null);
 
     // Modal de Produto (Peso e Adicionais)
@@ -333,6 +335,7 @@ export default function PDVPublico() {
             if (cart.length === 0) throw new Error("Carrinho vazio");
             if (!storeId) throw new Error("Loja não encontrada");
             if (!customerName.trim()) throw new Error("Informe o nome do cliente");
+            if (deliveryType === "entrega" && !deliveryAddress.trim()) throw new Error("Informe o endereço de entrega");
 
             // 1. Cria o pedido na tabela orders (para aparecer na aba Pedidos)
             const { data: order, error: orderError } = await supabase
@@ -346,6 +349,8 @@ export default function PDVPublico() {
                     status: "accepted", // Auto-aceito pois é feito por atendente
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     origin: "public_pdv",
+                    delivery_type: deliveryType,
+                    delivery_address: deliveryType === "entrega" ? deliveryAddress.trim() : null,
                 })
                 .select("id")
                 .single();
@@ -541,6 +546,8 @@ export default function PDVPublico() {
                                     {prods.map((p) => {
                                         const inCart = cart.find((i) => i.product.id === p.id);
                                         const outOfStock = p.stock_display <= 0;
+                                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                        const imageUrl = (p as any).image_url;
                                         return (
                                             <button
                                                 key={p.id}
@@ -555,18 +562,27 @@ export default function PDVPublico() {
                         `}
                                             >
                                                 {inCart && (
-                                                    <span className="absolute top-2 right-2 bg-primary text-primary-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                                                    <span className="absolute top-2 right-2 bg-primary text-primary-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center z-10 shadow-sm">
                                                         {inCart.quantity}
                                                     </span>
                                                 )}
                                                 {outOfStock && (
-                                                    <span className="absolute top-2 left-2 bg-red-100 text-red-600 text-[10px] font-semibold px-1.5 py-0.5 rounded">
+                                                    <span className="absolute top-2 left-2 bg-red-100 text-red-600 text-[10px] font-semibold px-1.5 py-0.5 rounded z-10 shadow-sm">
                                                         Esgotado
                                                     </span>
                                                 )}
-                                                <span className="font-medium text-sm line-clamp-2 mt-1 pr-6">{p.name}</span>
+                                                {imageUrl ? (
+                                                    <div className="w-full mb-2 h-24 sm:h-32 shrink-0 rounded-lg overflow-hidden bg-muted">
+                                                        <img src={imageUrl} alt={p.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-full mb-2 h-24 sm:h-32 shrink-0 rounded-lg bg-muted border flex items-center justify-center">
+                                                        <UtensilsCrossed className="h-8 w-8 text-muted-foreground/30" />
+                                                    </div>
+                                                )}
+                                                <span className="font-medium text-sm line-clamp-2 mt-1 w-full">{p.name}</span>
                                                 {p.barcode && (
-                                                    <span className="text-xs text-muted-foreground mt-0.5 font-mono">{p.barcode}</span>
+                                                    <span className="text-xs text-muted-foreground mt-0.5 font-mono w-full truncate">{p.barcode}</span>
                                                 )}
                                                 <div className="flex items-center justify-between w-full mt-2">
                                                     <span className="text-base font-bold text-primary">{fmt(p.price)}</span>
@@ -688,6 +704,40 @@ export default function PDVPublico() {
                                             className="h-9 bg-white"
                                         />
                                     </div>
+                                    <div className="pt-2 border-t border-primary/10">
+                                        <p className="text-[10px] font-bold uppercase tracking-wider text-primary/70 mb-2">Tipo de Entrega</p>
+                                        <div className="grid grid-cols-3 gap-1">
+                                            <button 
+                                                onClick={() => setDeliveryType("local")}
+                                                className={`py-1.5 rounded text-xs font-medium transition-colors ${deliveryType === "local" ? "bg-primary text-primary-foreground" : "bg-white border text-muted-foreground"}`}
+                                            >
+                                                Mesa
+                                            </button>
+                                            <button 
+                                                onClick={() => setDeliveryType("retirada")}
+                                                className={`py-1.5 rounded text-xs font-medium transition-colors ${deliveryType === "retirada" ? "bg-primary text-primary-foreground" : "bg-white border text-muted-foreground"}`}
+                                            >
+                                                Retirada
+                                            </button>
+                                            <button 
+                                                onClick={() => setDeliveryType("entrega")}
+                                                className={`py-1.5 rounded text-xs font-medium transition-colors ${deliveryType === "entrega" ? "bg-primary text-primary-foreground" : "bg-white border text-muted-foreground"}`}
+                                            >
+                                                Entrega
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {deliveryType === "entrega" && (
+                                        <div className="pt-2">
+                                            <Input 
+                                                placeholder="Endereço (Rua, Número, Bairro)" 
+                                                value={deliveryAddress}
+                                                onChange={e => setDeliveryAddress(e.target.value)} 
+                                                className="h-9 bg-white text-xs"
+                                                required={deliveryType === "entrega"}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Discount */}

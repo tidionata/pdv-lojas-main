@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, ShoppingCart, Package, TrendingUp,
-  BarChart3, Settings, LogOut, Menu, X, ShoppingBag,
+  BarChart3, Settings, LogOut, Menu, X, ShoppingBag, FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -18,6 +18,8 @@ const navItems = [
   { to: "/dashboard/products", icon: Package,         label: "Produtos" },
   { to: "/dashboard/stock",    icon: TrendingUp,      label: "Estoque" },
   { to: "/dashboard/reports",  icon: BarChart3,       label: "Relatórios" },
+  // Orçamentos (apenas se a loja habilitar)
+  ...(storeConfig?.config_orcamento ? [{ to: "/dashboard/orcamentos", icon: FileText, label: "Orçamentos" }] : []),
   { to: "/dashboard/settings", icon: Settings,        label: "Configurações" },
 ];
 
@@ -34,6 +36,21 @@ export default function DashboardLayout() {
     queryFn: async () => {
       const { data, error } = await supabase.from("profiles")
         .select("store_id").eq("auth_user_id", user!.id).single();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // ── Store config (incl. config_orcamento) ────────────────────────────────────────
+  const { data: storeConfig } = useQuery({
+    queryKey: ["store-config", profile?.store_id],
+    enabled: !!profile?.store_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("stores")
+        .select("config_orcamento")
+        .eq("id", profile!.store_id!)
+        .single();
       if (error) throw error;
       return data;
     },

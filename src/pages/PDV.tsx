@@ -301,6 +301,11 @@ export default function PDV() {
   const [cupomOpen, setCupomOpen] = useState(false);
   const [lastTicket, setLastTicket] = useState<SaleTicket | null>(null);
   const [saleCounter, setSaleCounter] = useState(1);
+  
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [deliveryType, setDeliveryType] = useState<"local" | "retirada" | "entrega">("local");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
 
   // Modal de Produto (Peso e Adicionais)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -513,6 +518,7 @@ export default function PDV() {
   const saleMutation = useMutation({
     mutationFn: async () => {
       if (cart.length === 0) throw new Error("Carrinho vazio");
+      if (deliveryType === "entrega" && !deliveryAddress.trim()) throw new Error("Informe o endereço de entrega");
 
       let saleId: string;
       let nfceData: any = null;
@@ -603,11 +609,14 @@ export default function PDV() {
           .from("orders")
           .insert({
             store_id: storeId,
-            customer_name: "Cliente PDV",
+            customer_name: customerName.trim() || "Cliente PDV",
+            customer_phone: customerPhone.trim() || null,
             status: "preparing",
             total,
             payment_method: paymentMethod,
-            origin: "pdv"
+            origin: "pdv",
+            delivery_type: deliveryType,
+            delivery_address: deliveryType === "entrega" ? deliveryAddress.trim() : null,
           })
           .select("id")
           .single();
@@ -698,7 +707,7 @@ export default function PDV() {
                 >
                   {(p as any).image_url ? (
                     <div className="w-full h-24 sm:h-28 bg-muted shrink-0 border-b border-border/50">
-                      <img src={(p as any).image_url} alt={p.name} className="w-full h-full object-cover" />
+                      <img src={(p as any).image_url} alt={p.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                     </div>
                   ) : (
                     <div className="w-full h-24 sm:h-28 bg-muted/30 shrink-0 flex items-center justify-center border-b border-border/50">
@@ -859,6 +868,53 @@ export default function PDV() {
                     <span>Total</span>
                     <span>{formatCurrency(total)}</span>
                   </div>
+                </div>
+
+                {/* Dados do Cliente e Entrega */}
+                <div className="space-y-2 pt-2 border-t">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input 
+                      placeholder="Nome do Cliente (Opcional)" 
+                      value={customerName}
+                      onChange={e => setCustomerName(e.target.value)}
+                      className="h-8 text-xs"
+                    />
+                    <Input 
+                      placeholder="Telefone (Opcional)" 
+                      value={customerPhone}
+                      onChange={e => setCustomerPhone(e.target.value)}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-1">
+                    <button 
+                        onClick={() => setDeliveryType("local")}
+                        className={`py-1.5 rounded text-xs font-medium transition-colors ${deliveryType === "local" ? "bg-primary text-primary-foreground" : "bg-white border text-muted-foreground"}`}
+                    >
+                        Mesa
+                    </button>
+                    <button 
+                        onClick={() => setDeliveryType("retirada")}
+                        className={`py-1.5 rounded text-xs font-medium transition-colors ${deliveryType === "retirada" ? "bg-primary text-primary-foreground" : "bg-white border text-muted-foreground"}`}
+                    >
+                        Retirada
+                    </button>
+                    <button 
+                        onClick={() => setDeliveryType("entrega")}
+                        className={`py-1.5 rounded text-xs font-medium transition-colors ${deliveryType === "entrega" ? "bg-primary text-primary-foreground" : "bg-white border text-muted-foreground"}`}
+                    >
+                        Entrega
+                    </button>
+                  </div>
+                  {deliveryType === "entrega" && (
+                    <Input 
+                      placeholder="Endereço de Entrega Completo" 
+                      value={deliveryAddress}
+                      onChange={e => setDeliveryAddress(e.target.value)}
+                      className="h-8 text-xs"
+                      required={deliveryType === "entrega"}
+                    />
+                  )}
                 </div>
 
                 {/* NFC-e Toggle */}

@@ -28,6 +28,8 @@ interface Order {
   origin?: string;
   external_id?: string;
   external_code?: string;
+  delivery_type?: string;
+  delivery_address?: string;
 }
 
 interface OrderItem {
@@ -104,6 +106,9 @@ function handlePrintReceipt(order: Order, items: OrderItem[], storeName: string)
         <div class="bold">CLIENTE: ${order.customer_name || "Sem nome"}</div>
         ${order.customer_phone ? `<div>TEL: ${order.customer_phone}</div>` : ""}
         <div>ORIGEM: ${order.origin === "public_pdv" ? "Balcão (Mobile)" : order.origin === "pdv" ? "PDV (Caixa)" : order.origin === "ifood" ? "iFood" : "Online"}</div>
+        ${order.delivery_type === "entrega" ? `<div class="bold" style="margin-top: 5px;">🛵 ENTREGA</div><div>${order.delivery_address || "Endereço não informado"}</div>` : ""}
+        ${order.delivery_type === "retirada" ? `<div class="bold" style="margin-top: 5px;">🚶 RETIRADA</div>` : ""}
+        ${order.delivery_type === "local" ? `<div class="bold" style="margin-top: 5px;">🍽️ LOCAL / MESA</div>` : ""}
       </div>
 
       <div style="margin-bottom: 10px;">
@@ -305,6 +310,11 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
                   </>
                 )}
               </div>
+              <div className={cn("mt-1 flex items-center gap-1", compact ? "text-[10px] ml-4" : "text-xs ml-6")}>
+                {order.delivery_type === "entrega" && <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-100 text-[10px] px-1.5 h-4">🛵 Entrega</Badge>}
+                {order.delivery_type === "retirada" && <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-100 text-[10px] px-1.5 h-4">🚶 Retirada</Badge>}
+                {order.delivery_type === "local" && <Badge variant="secondary" className="bg-purple-100 text-purple-700 hover:bg-purple-100 text-[10px] px-1.5 h-4">🍽️ Local</Badge>}
+              </div>
             </div>
           </div>
 
@@ -340,6 +350,12 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
         {!compact && order.notes && (
           <p className="mt-2 ml-6 text-xs text-muted-foreground bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5">
             📝 {order.notes}
+          </p>
+        )}
+
+        {!compact && order.delivery_type === "entrega" && order.delivery_address && (
+          <p className="mt-2 ml-6 text-xs text-muted-foreground bg-orange-50 border border-orange-100 rounded-lg px-3 py-1.5">
+            📍 <strong>Endereço:</strong> {order.delivery_address}
           </p>
         )}
       </div>

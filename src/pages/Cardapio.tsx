@@ -48,6 +48,8 @@ export default function Cardapio() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [notes, setNotes] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [deliveryType, setDeliveryType] = useState<"retirada" | "entrega">("retirada");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Modal de Produto (Peso e Adicionais)
@@ -186,6 +188,7 @@ export default function Cardapio() {
   const orderMutation = useMutation({
     mutationFn: async () => {
       if (!customerName.trim()) throw new Error("Informe seu nome");
+      if (deliveryType === "entrega" && !deliveryAddress.trim()) throw new Error("Informe o endereço de entrega");
       if (cart.length === 0) throw new Error("Carrinho vazio");
 
       // Tenta Supabase
@@ -200,6 +203,8 @@ export default function Cardapio() {
             notes: notes.trim() || null,
             payment_method: paymentMethod,
             status: "pending",
+            delivery_type: deliveryType,
+            delivery_address: deliveryType === "entrega" ? deliveryAddress.trim() : null,
           })
           .select("id").single();
         if (orderError) throw orderError;
@@ -227,6 +232,8 @@ export default function Cardapio() {
           notes: notes.trim() || null,
           payment_method: paymentMethod,
           status: "pending",
+          delivery_type: deliveryType,
+          delivery_address: deliveryType === "entrega" ? deliveryAddress.trim() : null,
           created_at: new Date().toISOString(),
           items: cart.map(i => ({
             product_name: i.product.name,
@@ -372,7 +379,7 @@ export default function Cardapio() {
                         {/* Foto */}
                         {imageUrl ? (
                           <div className="relative shrink-0">
-                            <img src={imageUrl} alt={p.name}
+                            <img src={imageUrl} alt={p.name} referrerPolicy="no-referrer"
                               className="h-24 w-24 rounded-xl object-cover border" />
                             {outOfStock && (
                               <span className="absolute inset-0 bg-white/60 rounded-xl flex items-center justify-center text-[10px] font-bold text-red-600">Esgotado</span>
@@ -525,6 +532,39 @@ export default function Cardapio() {
                     <Input placeholder="(11) 99999-9999" value={customerPhone}
                       onChange={e => setCustomerPhone(e.target.value)} />
                   </div>
+
+                  {/* Tipo de Entrega */}
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Como deseja receber?</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button 
+                        onClick={() => setDeliveryType("retirada")}
+                        className={`py-2 rounded-lg border text-sm font-medium transition-colors ${deliveryType === "retirada" ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted"}`}
+                      >
+                        Retirar na Loja
+                      </button>
+                      <button 
+                        onClick={() => setDeliveryType("entrega")}
+                        className={`py-2 rounded-lg border text-sm font-medium transition-colors ${deliveryType === "entrega" ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted"}`}
+                      >
+                        Entrega
+                      </button>
+                    </div>
+                  </div>
+
+                  {deliveryType === "entrega" && (
+                    <div>
+                      <label className="text-sm font-medium flex items-center gap-1.5 mb-1.5">
+                        Endereço de Entrega *
+                      </label>
+                      <Input 
+                        placeholder="Ex: Rua das Flores, 123, Bairro Centro" 
+                        value={deliveryAddress}
+                        onChange={e => setDeliveryAddress(e.target.value)} 
+                        required={deliveryType === "entrega"}
+                      />
+                    </div>
+                  )}
 
                   {/* Pagamento */}
                   <div>

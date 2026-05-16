@@ -16,10 +16,10 @@ interface Order {
   customer_name: string;
   customer_phone?: string;
   status: string;
-  total: number;
-  notes?: string;
   payment_method: string;
   created_at: string;
+  delivery_type?: string;
+  delivery_address?: string;
 }
 
 interface OrderItem {
@@ -305,10 +305,22 @@ export default function PedidoStatus() {
             </div>
           </div>
 
-          <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-            <User className="h-3 w-3" />
-            <span>{order.customer_name}</span>
-            {order.customer_phone && <span>· {order.customer_phone}</span>}
+          <div className="mt-3 space-y-1 text-xs text-muted-foreground border-t pt-3">
+            <div className="flex items-center gap-2">
+              <User className="h-3 w-3" />
+              <span>{order.customer_name}</span>
+              {order.customer_phone && <span>· {order.customer_phone}</span>}
+            </div>
+            <div className="flex items-center gap-2 font-medium">
+              {order.delivery_type === "entrega" && <span className="text-orange-600">🛵 Entrega no endereço:</span>}
+              {order.delivery_type === "retirada" && <span className="text-blue-600">🚶 Retirar na loja</span>}
+              {order.delivery_type === "local" && <span className="text-purple-600">🍽️ Consumo no local</span>}
+            </div>
+            {order.delivery_type === "entrega" && order.delivery_address && (
+              <div className="pl-5 text-gray-600">
+                {order.delivery_address}
+              </div>
+            )}
           </div>
         </div>
 

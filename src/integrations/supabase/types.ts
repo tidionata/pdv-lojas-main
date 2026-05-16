@@ -25,6 +25,8 @@ export type Database = {
           payment_method: string
           notes: string | null
           origin: string | null
+          delivery_type: string | null
+          delivery_address: Json | null
           created_at: string
           updated_at: string
         }
@@ -38,6 +40,8 @@ export type Database = {
           payment_method: string
           notes?: string | null
           origin?: string | null
+          delivery_type?: string | null
+          delivery_address?: Json | null
           created_at?: string
           updated_at?: string
         }
@@ -51,6 +55,8 @@ export type Database = {
           payment_method?: string
           notes?: string | null
           origin?: string | null
+          delivery_type?: string | null
+          delivery_address?: Json | null
           created_at?: string
           updated_at?: string
         }
