@@ -10,20 +10,6 @@ import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
-
-const navItems = [
-  { to: "/dashboard",          icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/dashboard/pdv",      icon: ShoppingCart,    label: "PDV" },
-  { to: "/dashboard/pedidos",  icon: ShoppingBag,     label: "Pedidos", badge: true },
-  { to: "/dashboard/products", icon: Package,         label: "Produtos" },
-  { to: "/dashboard/stock",    icon: TrendingUp,      label: "Estoque" },
-  { to: "/dashboard/reports",  icon: BarChart3,       label: "Relatórios" },
-  // Orçamentos (apenas se a loja habilitar)
-  ...(storeConfig?.config_orcamento ? [{ to: "/dashboard/orcamentos", icon: FileText, label: "Orçamentos" }] : []),
-  { to: "/dashboard/settings", icon: Settings,        label: "Configurações" },
-];
-
-
 export default function DashboardLayout() {
   const { signOut, user } = useAuth();
   const location = useLocation();
@@ -55,6 +41,18 @@ export default function DashboardLayout() {
       return data;
     },
   });
+
+  const navItems = [
+    { to: "/dashboard",          icon: LayoutDashboard, label: "Dashboard" },
+    { to: "/dashboard/pdv",      icon: ShoppingCart,    label: "PDV" },
+    { to: "/dashboard/pedidos",  icon: ShoppingBag,     label: "Pedidos", badge: true },
+    { to: "/dashboard/products", icon: Package,         label: "Produtos" },
+    { to: "/dashboard/stock",    icon: TrendingUp,      label: "Estoque" },
+    { to: "/dashboard/reports",  icon: BarChart3,       label: "Relatórios" },
+    // Orçamentos (apenas se a loja habilitar)
+    ...(storeConfig?.config_orcamento ? [{ to: "/dashboard/orcamentos", icon: FileText, label: "Orçamentos" }] : []),
+    { to: "/dashboard/settings", icon: Settings,        label: "Configurações" },
+  ];
 
   // Badge: pedidos pendentes
   const storeId = profile?.store_id ?? user?.id ?? "";
