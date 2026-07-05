@@ -14,7 +14,7 @@ import {
   Link2, Store, Copy, ExternalLink, ShoppingCart,
   UtensilsCrossed, AlertCircle, RefreshCw, Eye, EyeOff,
   FileText, Save, ExternalLink as ExtLink, Shield, Radio, Printer,
-  CheckCircle2, Star, Clock, ShoppingBag,
+  CheckCircle2, Star, Clock, ShoppingBag, Receipt, Percent,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -57,7 +57,7 @@ function maskCnpj(v: string) {
 export default function SettingsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "nfce" | "impostos" | "assinatura" | "ifood">("links");
+  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "assinatura" | "ifood" | "impressora" | "pdv">("links");
   const [sefazServico, setSefazServico] = useState<SefazServico>("NFeAutorizacao");
   const [showToken, setShowToken] = useState(false);
   const [nfe, setNfe] = useState<NfeConfig>({});
@@ -116,6 +116,18 @@ export default function SettingsPage() {
   });
 
   const [taxForm, setTaxForm] = useState({ cbs_rate: 0.9, ibs_rate: 0.1 });
+
+  const [printers, setPrinters] = useState<any[]>([]);
+  const [selectedCaixaPrinter, setSelectedCaixaPrinter] = useState(localStorage.getItem('pdv_printer_caixa') || '');
+  const [selectedCozinhaPrinter, setSelectedCozinhaPrinter] = useState(localStorage.getItem('pdv_printer_cozinha') || '');
+
+  useEffect(() => {
+    // @ts-ignore
+    if (window.electronAPI) {
+      // @ts-ignore
+      window.electronAPI.getPrinters().then(setPrinters).catch(console.error);
+    }
+  }, []);
 
   useEffect(() => {
     if (taxConfig) {
@@ -318,37 +330,52 @@ export default function SettingsPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-5xl mx-auto pb-12">
       {/* Título */}
       <div>
         <h1 className="text-2xl font-bold font-['Space_Grotesk']">Configurações</h1>
         <p className="text-muted-foreground text-sm">Gerencie os recursos da sua loja</p>
       </div>
 
-      {/* Abas */}
-      <div className="flex gap-1 border-b">
+      {/* Grade de Ícones (Tabs) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3">
         {([
-          { id: "links",       label: "🔗 Links" },
-          { id: "integracoes", label: "⚙️ Integrações" },
-          { id: "nfce",        label: "🧾 NFC-e" },
-          { id: "impostos",    label: "⚖️ Impostos" },
-          { id: "ifood",       label: "🛵 iFood" },
-          { id: "assinatura",  label: "💳 Assinatura" },
-          { id: "impressora",  label: "🖨️ Impressora" },
-          { id: "pdv",         label: "🛒 PDV" },
-        ] as const).map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === tab.id
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+          { id: "links",       label: "Links",       icon: Link2 },
+          { id: "integracoes", label: "Integrações", icon: Radio },
+          { id: "ifood",       label: "iFood",       icon: Store },
+          { id: "assinatura",  label: "Assinatura",  icon: Star },
+          { id: "impressora",  label: "Impressora",  icon: Printer },
+          { id: "pdv",         label: "PDV",         icon: ShoppingCart },
+        ] as const).map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={cn(
+                "flex flex-col items-center justify-center p-4 bg-white border rounded-xl transition-all duration-300 group",
+                isActive 
+                  ? "border-blue-500 shadow-md ring-2 ring-blue-500/20 bg-blue-50/30 scale-105" 
+                  : "border-slate-200 hover:border-blue-400 hover:shadow-lg hover:-translate-y-1"
+              )}
+            >
+              <Icon 
+                strokeWidth={1.5} 
+                className={cn(
+                  "w-10 h-10 mb-3 transition-colors",
+                  isActive ? "text-blue-600" : "text-blue-500 group-hover:text-blue-600"
+                )} 
+              />
+              <span className={cn(
+                "text-xs font-semibold text-center leading-tight",
+                isActive ? "text-blue-900" : "text-slate-600 group-hover:text-slate-900"
+              )}>
+                {tab.label}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* ── ABA: LINKS ──────────────────────────────────────────────────────── */}
@@ -444,153 +471,7 @@ export default function SettingsPage() {
       {/* ── ABA: INTEGRAÇÕES ────────────────────────────────────────────────── */}
       {activeTab === "integracoes" && (
         <>
-          {/* Focus NFe */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <FileText className="h-5 w-5 text-primary" />
-                Nota Fiscal Eletrônica — Focus NFe
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
 
-              {/* Aviso informativo */}
-              <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-700 space-y-1">
-                <p className="font-semibold">Como configurar:</p>
-                <ol className="list-decimal list-inside space-y-0.5">
-                  <li>Crie sua conta em <a href="https://focusnfe.com.br" target="_blank" rel="noopener noreferrer" className="underline font-medium">focusnfe.com.br <ExtLink className="h-3 w-3 inline" /></a></li>
-                  <li>Cadastre sua empresa (CNPJ + certificado digital A1)</li>
-                  <li>Acesse <strong>Painel API → Tokens</strong> e copie o token de produção</li>
-                  <li>Cole o token abaixo e salve</li>
-                </ol>
-              </div>
-
-              {/* Token */}
-              <div className="space-y-1.5">
-                <Label className="font-semibold flex items-center gap-1.5">
-                  <Shield className="h-3.5 w-3.5 text-muted-foreground" />
-                  Token de acesso da API
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    type={showToken ? "text" : "password"}
-                    placeholder="Cole aqui o token da Focus NFe..."
-                    value={nfe.token ?? ""}
-                    onChange={(e) => setNfe({ ...nfe, token: e.target.value })}
-                    className="font-mono text-sm"
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setShowToken(!showToken)}
-                    title={showToken ? "Ocultar" : "Mostrar"}
-                  >
-                    {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  O token fica salvo por empresa e nunca é exibido publicamente.
-                </p>
-              </div>
-
-              {/* Ambiente */}
-              <div className="space-y-1.5">
-                <Label className="font-semibold">Ambiente</Label>
-                <div className="flex gap-2">
-                  {(["homologacao", "producao"] as const).map((env) => (
-                    <button
-                      key={env}
-                      onClick={() => setNfe({ ...nfe, ambiente: env })}
-                      className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                        nfe.ambiente === env
-                          ? env === "producao"
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-amber-100 text-amber-800 border-amber-300"
-                          : "bg-muted text-muted-foreground hover:bg-muted/80"
-                      }`}
-                    >
-                      {env === "homologacao" ? "🧪 Homologação (testes)" : "🚀 Produção"}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Use <strong>Homologação</strong> para testar. Notas nesse modo não têm validade fiscal.
-                </p>
-              </div>
-
-              <hr />
-
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Dados fiscais da empresa emissora
-              </p>
-
-              {/* CNPJ */}
-              <div className="space-y-1.5">
-                <Label>CNPJ</Label>
-                <Input
-                  placeholder="00.000.000/0000-00"
-                  value={nfe.cnpj ?? ""}
-                  onChange={(e) => setNfe({ ...nfe, cnpj: maskCnpj(e.target.value) })}
-                  maxLength={18}
-                />
-              </div>
-
-              {/* Razão Social */}
-              <div className="space-y-1.5">
-                <Label>Razão Social</Label>
-                <Input
-                  placeholder="Nome da empresa como registrado na Receita Federal"
-                  value={nfe.razao_social ?? ""}
-                  onChange={(e) => setNfe({ ...nfe, razao_social: e.target.value })}
-                />
-              </div>
-
-              {/* Inscrição Estadual */}
-              <div className="space-y-1.5">
-                <Label>Inscrição Estadual</Label>
-                <Input
-                  placeholder="IE da empresa (ou ISENTO)"
-                  value={nfe.inscricao_estadual ?? ""}
-                  onChange={(e) => setNfe({ ...nfe, inscricao_estadual: e.target.value })}
-                />
-              </div>
-
-              {/* Regime Tributário */}
-              <div className="space-y-1.5">
-                <Label>Regime Tributário</Label>
-                <select
-                  value={nfe.regime_tributario ?? ""}
-                  onChange={(e) => setNfe({ ...nfe, regime_tributario: e.target.value as any })}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">Selecione...</option>
-                  <option value="1">1 — Simples Nacional</option>
-                  <option value="2">2 — Simples Nacional (excesso de sublimite)</option>
-                  <option value="3">3 — Regime Normal</option>
-                </select>
-              </div>
-
-              {/* Botão salvar */}
-              <Button
-                className="w-full gap-2"
-                onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending || storeLoading}
-              >
-                <Save className="h-4 w-4" />
-                {saveMutation.isPending ? "Salvando..." : "Salvar configurações"}
-              </Button>
-
-              {/* Status salvo */}
-              {secrets?.nfe_config && (secrets.nfe_config as NfeConfig).token && (
-                <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
-                  <Shield className="h-3.5 w-3.5" />
-                  Token configurado em modo{" "}
-                  <strong>{(secrets.nfe_config as NfeConfig).ambiente === "producao" ? "Produção" : "Homologação"}</strong>
-                  {" — "}⛔ isolado por RLS (só o owner acessa)
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
           {/* Placeholder outras integrações */}
           <Card className="opacity-60">
@@ -608,248 +489,6 @@ export default function SettingsPage() {
         </>
       )}
 
-      {/* ── ABA: NFC-e ──────────────────────────────────────────────────────── */}
-      {activeTab === "nfce" && (
-        <>
-          {/* Seletor de Estado + Série + CSC */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <FileText className="h-5 w-5 text-primary" />
-                Configuração da NFC-e
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
-                <strong>NFC-e</strong> é a Nota Fiscal de Consumidor Eletrônica emitida no PDV.
-                Configure os dados abaixo de acordo com o seu estado e credenciais da SEFAZ.
-              </div>
-
-              {/* Estado (UF) */}
-              <div className="space-y-1.5">
-                <Label className="font-semibold">Estado (UF) da empresa</Label>
-                <select
-                  value={nfe.uf ?? ""}
-                  onChange={(e) => setNfe({ ...nfe, uf: e.target.value })}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">Selecione o estado...</option>
-                  {Object.entries(UF_NAMES).sort(([,a],[,b]) => a.localeCompare(b)).map(([uf, nome]) => (
-                    <option key={uf} value={uf}>{uf} — {nome}</option>
-                  ))}
-                </select>
-                {nfe.uf && (
-                  <p className="text-xs text-muted-foreground">
-                    Autorizador: <strong>{SEFAZ_BY_UF[nfe.uf]?.autorizador}</strong>
-                  </p>
-                )}
-              </div>
-
-              {/* Série NFC-e */}
-              <div className="space-y-1.5">
-                <Label className="font-semibold">Série NFC-e</Label>
-                <Input
-                  placeholder="Ex: 1"
-                  value={nfe.nfce_serie ?? ""}
-                  onChange={(e) => setNfe({ ...nfe, nfce_serie: e.target.value })}
-                  maxLength={3}
-                />
-                <p className="text-xs text-muted-foreground">Número da série configurada na SEFAZ (geralmente 1).</p>
-              </div>
-
-              {/* CSC */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="font-semibold">CSC ID</Label>
-                  <Input
-                    placeholder="Ex: 1"
-                    value={nfe.nfce_csc_id ?? ""}
-                    onChange={(e) => setNfe({ ...nfe, nfce_csc_id: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="font-semibold">CSC Token</Label>
-                  <Input
-                    type="password"
-                    placeholder="Código de Segurança do Contribuinte"
-                    value={nfe.nfce_csc_token ?? ""}
-                    onChange={(e) => setNfe({ ...nfe, nfce_csc_token: e.target.value })}
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">O CSC é gerado no portal da SEFAZ do seu estado e é obrigatório para o QR Code da NFC-e.</p>
-
-              <Button
-                className="w-full gap-2"
-                onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending}
-              >
-                <Save className="h-4 w-4" />
-                {saveMutation.isPending ? "Salvando..." : "Salvar configurações NFC-e"}
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Consulta de endpoints SEFAZ */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Radio className="h-5 w-5 text-primary" />
-                Webservices SEFAZ — Consulta de Endpoints
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Selecione o estado e o serviço para ver a URL do endpoint oficial da SEFAZ v4.00.
-              </p>
-
-              <div className="grid grid-cols-2 gap-3">
-                {/* Seletor UF */}
-                <div className="space-y-1.5">
-                  <Label>Estado (UF)</Label>
-                  <select
-                    value={nfe.uf ?? ""}
-                    onChange={(e) => setNfe({ ...nfe, uf: e.target.value })}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    <option value="">Selecione...</option>
-                    {Object.entries(UF_NAMES).sort(([,a],[,b]) => a.localeCompare(b)).map(([uf, nome]) => (
-                      <option key={uf} value={uf}>{uf} — {nome}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Seletor Serviço */}
-                <div className="space-y-1.5">
-                  <Label>Serviço</Label>
-                  <select
-                    value={sefazServico}
-                    onChange={(e) => setSefazServico(e.target.value as SefazServico)}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    {(Object.entries(SERVICO_LABELS) as [SefazServico, string][]).map(([k, v]) => (
-                      <option key={k} value={k}>{v}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* URL resultado */}
-              {nfe.uf && SEFAZ_BY_UF[nfe.uf] && (() => {
-                const url = SEFAZ_BY_UF[nfe.uf!].endpoints[sefazServico];
-                const aut = SEFAZ_BY_UF[nfe.uf!].autorizador;
-                return (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold bg-primary/10 text-primary rounded-full px-2 py-0.5">{aut}</span>
-                      <span className="text-xs text-muted-foreground">autorizador para {nfe.uf}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <div className="flex-1 bg-muted rounded-lg px-3 py-2 border overflow-hidden">
-                        <p className="text-xs font-mono text-muted-foreground truncate">{url}</p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => { navigator.clipboard.writeText(url); toast.success("URL copiada!"); }}
-                        title="Copiar URL"
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                      {!url.startsWith("—") && (
-                        <Button asChild variant="outline" size="icon" title="Abrir no navegador">
-                          <a href={url} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="h-4 w-4" />
-                          </a>
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {!nfe.uf && (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Selecione um estado para ver os endpoints disponíveis.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </>
-      )}
-
-      {/* ── ABA: IMPOSTOS ───────────────────────────────────────────────────── */}
-      {activeTab === "impostos" && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Shield className="h-5 w-5 text-primary" />
-                Reforma Tributária (IBS e CBS) — Período 2026
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 text-sm text-blue-700 space-y-2">
-                <p className="font-semibold flex items-center gap-1.5">
-                  <AlertCircle className="h-4 w-4" /> Período de Transição 2026
-                </p>
-                <p className="text-xs leading-relaxed">
-                  Em 2026, entramos no período de testes da Reforma Tributária. Os sistemas devem destacar 
-                  o IBS (Estadual/Municipal) e a CBS (Federal) com alíquotas reduzidas.
-                </p>
-                <ul className="list-disc list-inside text-xs space-y-1">
-                  <li><strong>CBS:</strong> Alíquota padrão de <strong>0,9%</strong></li>
-                  <li><strong>IBS:</strong> Alíquota padrão de <strong>0,1%</strong> (sendo 0,1% Estado e 0% Município)</li>
-                  <li>A base de cálculo é o valor do item menos descontos.</li>
-                </ul>
-              </div>
-
-              <div className="grid gap-6 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="font-semibold">Alíquota CBS (%)</Label>
-                  <Input 
-                    type="number" step="0.01"
-                    value={taxForm.cbs_rate}
-                    onChange={e => setTaxForm({ ...taxForm, cbs_rate: parseFloat(e.target.value) || 0 })}
-                  />
-                  <p className="text-[10px] text-muted-foreground">Padrão 2026: 0,90%</p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="font-semibold">Alíquota IBS (%)</Label>
-                  <Input 
-                    type="number" step="0.01"
-                    value={taxForm.ibs_rate}
-                    onChange={e => setTaxForm({ ...taxForm, ibs_rate: parseFloat(e.target.value) || 0 })}
-                  />
-                  <p className="text-[10px] text-muted-foreground">Padrão 2026: 0,10% (Estadual)</p>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="bg-muted/30 p-4 rounded-lg border border-dashed">
-                <p className="text-xs font-semibold mb-2 flex items-center gap-1.5 text-muted-foreground uppercase">
-                  <CheckCircle2 className="h-3.5 w-3.5" /> Próximos Passos
-                </p>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Além das alíquotas acima, você deve configurar a <strong>Classificação Tributária</strong> 
-                  em cada produto (Cadastro de Produtos → Tributação).
-                </p>
-              </div>
-
-              <Button 
-                className="w-full gap-2" 
-                onClick={() => taxMutation.mutate()}
-                disabled={taxMutation.isPending || taxLoading}
-              >
-                <Save className="h-4 w-4" />
-                {taxMutation.isPending ? "Salvando..." : "Salvar Alíquotas"}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
       {/* ── ABA: IFOOD ────────────────────────────────────────────────────────── */}
       {activeTab === "ifood" && (
@@ -1112,6 +751,64 @@ export default function SettingsPage() {
             <Separator />
 
             <div className="space-y-3">
+              <h3 className="font-semibold text-primary">Seleção de Impressoras (App Desktop)</h3>
+              <p className="text-sm text-muted-foreground">
+                Selecione as impressoras específicas para o Caixa (recibo fiscal) e para a Cozinha (pedidos).
+              </p>
+              
+              {printers.length > 0 ? (
+                <div className="grid gap-6 sm:grid-cols-2 mt-4">
+                  <div className="space-y-1.5">
+                    <Label className="font-semibold text-blue-600">Impressora do Caixa (Notas/Recibos)</Label>
+                    <select 
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={selectedCaixaPrinter}
+                      onChange={e => {
+                        setSelectedCaixaPrinter(e.target.value);
+                        localStorage.setItem('pdv_printer_caixa', e.target.value);
+                        toast.success("Impressora do caixa salva!");
+                      }}
+                    >
+                      <option value="">-- Usar impressora padrão do sistema --</option>
+                      {printers.map(p => (
+                        <option key={p.name} value={p.name}>{p.name} {p.isDefault ? '(Padrão)' : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="font-semibold text-orange-600">Impressora da Cozinha (Pedidos)</Label>
+                    <select 
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={selectedCozinhaPrinter}
+                      onChange={e => {
+                        setSelectedCozinhaPrinter(e.target.value);
+                        localStorage.setItem('pdv_printer_cozinha', e.target.value);
+                        toast.success("Impressora da cozinha salva!");
+                      }}
+                    >
+                      <option value="">-- Não imprimir na cozinha --</option>
+                      {printers.map(p => (
+                        <option key={p.name} value={p.name}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-4 text-sm text-yellow-800">
+                  <p className="font-semibold flex items-center gap-1.5">
+                    Aviso
+                  </p>
+                  <p className="text-xs mt-1">
+                    Nenhuma impressora encontrada ou você não está usando o aplicativo Desktop. A seleção de impressoras só está disponível no App Desktop instalado.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            <div className="space-y-3">
               <h3 className="font-semibold flex items-center gap-2">
                 🚀 Como configurar a Impressão Silenciosa (Sem tela de confirmação)
               </h3>
@@ -1175,6 +872,8 @@ export default function SettingsPage() {
                   Gerar QR Code de acompanhamento no cupom
                 </Label>
               </div>
+            </div>
+
             </div>
           </CardContent>
         </Card>

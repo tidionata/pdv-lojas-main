@@ -10,9 +10,10 @@ import {
   Clock, CheckCircle2, ChefHat, PackageCheck, XCircle,
   MessageSquare, Send, User, Phone, ChevronDown, ChevronUp,
   ShoppingBag, Bell, RefreshCw, LayoutList, LayoutGrid, Maximize2,
-  Printer,
+  Printer, FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isElectron, printToKitchen, buildKitchenReceiptHtml } from "@/lib/electronPrinting";
 
 interface Order {
   id: string;
@@ -30,6 +31,8 @@ interface Order {
   external_code?: string;
   delivery_type?: string;
   delivery_address?: string;
+  asaas_invoice_id?: string;
+  asaas_invoice_status?: string;
 }
 
 interface OrderItem {
@@ -66,7 +69,20 @@ const PAYMENT_LABELS: Record<string, string> = {
 const fmt = (v: any) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v) || 0);
 
-function handlePrintReceipt(order: Order, items: OrderItem[], storeName: string) {
+async function handlePrintReceipt(order: Order, items: OrderItem[], storeName: string) {
+  // Se estiver no Electron e tiver impressora de cozinha configurada → imprime silenciosamente
+  if (isElectron()) {
+    const html = buildKitchenReceiptHtml(order, items, storeName);
+    const ok = await printToKitchen(html);
+    if (ok) {
+      toast.success('🖨️ Comanda enviada para a impressora de cozinha!');
+      return;
+    }
+    // Se não tiver impressora configurada, cai no fallback abaixo
+    toast.info('Impressora de cozinha não configurada. Abrindo janela de impressão...');
+  }
+
+  // Fallback: abre janela do navegador (modo web)
   const w = window.open("", "_blank", "width=400,height=700");
   if (!w) return;
   
@@ -181,6 +197,53 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
       return data;
     },
     onError: (e) => toast.error(`Erro iFood: ${e.message}`),
+  });
+
+  // Emitir Nota Fiscal — PlugNotas
+  const plugnotasMutation = useMutation({
+    mutationFn: async () => {
+      // Busca o CNPJ do prestador salvo nas configurações da loja
+      const { data: secretsData } = await (supabase as any)
+        .from('store_secrets')
+        .select('nfe_config')
+        .eq('store_id', storeId)
+        .maybeSingle();
+
+      const cnpjPrestador = (secretsData?.nfe_config as any)?.cnpj?.replace(/\D/g, '');
+
+      const { data, error } = await supabase.functions.invoke('plugnotas-api', {
+        body: {
+          action: 'create_nfse',
+          payload: {
+            cnpjPrestador,
+            nomeCliente: order.customer_name || 'Consumidor Final',
+            valorTotal: order.total,
+            descricaoServico: `Venda de produtos — Pedido #${order.id.substring(0, 8).toUpperCase()}`,
+            idExterno: `pdv_${order.id}`,
+          },
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) {
+        throw new Error(`${data.error}. ${data.details ? JSON.stringify(data.details) : ''}`);
+      }
+
+      // Salva o protocolo retornado pelo PlugNotas no pedido
+      const protocolo = data?.protocolo || data?.id;
+      if (protocolo) {
+        await (supabase as any).from('orders').update({
+          asaas_invoice_id: protocolo,
+          asaas_invoice_status: 'emitida',
+        }).eq('id', order.id);
+      }
+      return data;
+    },
+    onSuccess: () => {
+      toast.success('✅ Nota fiscal solicitada com sucesso!');
+      queryClient.invalidateQueries({ queryKey: ['store-orders', storeId] });
+    },
+    onError: (e: any) => toast.error(`Erro ao emitir nota: ${e.message}`),
   });
 
   // Avançar status
@@ -361,9 +424,8 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
       </div>
 
       {/* Actions */}
-      {order.status !== "delivered" && order.status !== "cancelled" && (
-        <div className={cn("flex gap-1.5 px-3 pb-3", !expanded && "pb-3")}>
-          {cfg.next && (
+      <div className={cn("flex gap-1.5 px-3 pb-3", !expanded && "pb-3")}>
+        {order.status !== "delivered" && order.status !== "cancelled" && cfg.next && (
             <Button size="sm" className={cn("flex-1", compact ? "h-7 text-[10px]" : "h-9")}
               disabled={advanceMutation.isPending || ifoodMutation.isPending}
               onClick={() => advanceMutation.mutate(cfg.next!)}>
@@ -377,12 +439,44 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
               {ifoodMutation.isPending ? "..." : "🚚 Despachar"}
             </Button>
           )}
-          {!["delivered", "cancelled"].includes(order.status) && (
-            <Button size="sm" variant="outline" className={cn("gap-1 h-9", compact && "h-7 text-[10px]")}
-              onClick={() => handlePrintReceipt(order, items, storeName)}>
-              <Printer className="h-4 w-4" />
-              {!compact && "Imprimir"}
-            </Button>
+          <Button size="sm" variant="outline" className={cn("gap-1 h-9", compact && "h-7 text-[10px]")}
+            onClick={() => handlePrintReceipt(order, items, storeName)}>
+            <Printer className="h-4 w-4" />
+            {!compact && "Imprimir"}
+          </Button>
+          {order.asaas_invoice_id ? (
+             <Button size="sm" variant="outline" className={cn("gap-1 h-9 text-blue-600 border-blue-200 hover:bg-blue-50", compact && "h-7 text-[10px]")}
+               onClick={async () => {
+                 try {
+                   toast.info('Baixando PDF da nota...');
+                   const { data, error } = await supabase.functions.invoke('plugnotas-api', {
+                     body: { action: 'get_pdf_url', payload: { protocolo: order.asaas_invoice_id } }
+                   });
+                   if (error) throw error;
+                   if (data?.pdf_base64) {
+                     // Abre o PDF em nova aba a partir do base64
+                     const byteChars = atob(data.pdf_base64);
+                     const byteArr = new Uint8Array(byteChars.length);
+                     for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+                     const blob = new Blob([byteArr], { type: 'application/pdf' });
+                     window.open(URL.createObjectURL(blob), '_blank');
+                   } else {
+                     toast.info(`Protocolo da nota: ${order.asaas_invoice_id}`);
+                   }
+                 } catch {
+                   toast.info(`Protocolo da nota: ${order.asaas_invoice_id}`);
+                 }
+               }}>
+               <FileText className="h-4 w-4" />
+               {!compact && "Ver Nota PDF"}
+             </Button>
+          ) : (
+             <Button size="sm" variant="outline" className={cn("gap-1 h-9", compact && "h-7 text-[10px]")}
+               disabled={plugnotasMutation.isPending}
+               onClick={() => plugnotasMutation.mutate()}>
+               <FileText className="h-4 w-4" />
+               {!compact && (plugnotasMutation.isPending ? "Emitindo..." : "Emitir Nota")}
+             </Button>
           )}
           {order.status === "pending" && (
             <Button size="sm" variant="outline" 
@@ -393,8 +487,7 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
               {!compact && " Recusar"}
             </Button>
           )}
-        </div>
-      )}
+      </div>
       {/* Expanded: Itens detalhados + Chat */}
       {expanded && (
         <div className="border-t">

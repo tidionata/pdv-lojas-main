@@ -23,6 +23,7 @@ import {
   CheckCircle2, Image as ImageIcon,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
+import { printToKitchen, buildKitchenReceiptHtml } from "@/lib/electronPrinting";
 
 type Product = Tables<"products">;
 
@@ -75,70 +76,82 @@ function Cupom({ ticket, printRef }: { ticket: SaleTicket; printRef: React.RefOb
   return (
     <div
       ref={printRef}
-      className="bg-white text-black font-mono text-[11px] leading-tight p-4 w-[320px] mx-auto select-text"
+      className="bg-white text-black font-mono text-[11px] leading-tight p-2 sm:p-4 w-full max-w-[300px] mx-auto select-text"
       style={{ fontFamily: "'Courier New', Courier, monospace" }}
     >
-      {/* Cabeçalho */}
-      <div className="text-center space-y-0.5 mb-2">
-        <p className="text-[15px] font-bold tracking-widest">SENHA: {String(ticket.senha).padStart(3, "0")}</p>
-        <p className="font-bold text-[12px]">{ticket.storeName}</p>
-        {ticket.storeCnpj && (
-          <p>CNPJ {ticket.storeCnpj} IE: {ticket.nfceKey ? "CONFERIR" : "000000000000"}</p>
-        )}
-        {ticket.storeAddress && <p className="underline">{ticket.storeAddress}</p>}
-        {ticket.storeCity && <p>{ticket.storeCity}</p>}
-        <p className="text-[10px]">Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica</p>
-        <p className="text-[10px]">{dateStr}</p>
-      </div>
-
-      <div className="border-t border-dashed border-black my-1" />
-
-      {/* Cabeçalho da tabela */}
-      <div className="flex justify-between text-[10px] font-bold mb-0.5">
-        <span className="w-8">Cód</span>
-        <span className="flex-1 text-center underline">Descrição</span>
-      </div>
-      <div className="flex justify-between text-[10px] mb-1">
-        <span className="w-10">Qtd</span>
-        <span className="w-10">Und</span>
-        <span className="w-16 text-right">Vl Unit</span>
-        <span className="w-16 text-right" >Vl Total</span>
-      </div>
-
-      <div className="border-t border-dashed border-black mb-1" />
-
-      {/* Itens */}
-      {ticket.items.map((item, idx) => (
-        <div key={item.product.id} className="mb-1.5">
-          <div className="flex justify-between">
-            <span className="w-10 text-[10px]">{String(idx + 1).padStart(3, "0")}</span>
-            <span className="flex-1 text-[10px] font-medium truncate">{item.product.name}</span>
+      {/* 1. Acompanhe seu pedido (Topo) */}
+      {ticket.trackingUrl && (
+        <div className="flex flex-col items-center text-center space-y-1 mb-3">
+          <div className="border border-black p-2 rounded-sm w-full mb-1">
+            <p className="text-[13px] font-bold">ACOMPANHE SEU PEDIDO</p>
+            <p className="text-[12px]">ATRAVÉS DO CELULAR</p>
+            <p className="text-[10px]">É SÓ LER O QRCODE</p>
           </div>
-          <div className="flex justify-between text-[10px]">
-            <span className="w-10">{fmtQty(item.quantity)}</span>
-            <span className="w-10">{(item.product as any).unit ?? "Und"}</span>
-            <span className="w-16 text-right">{fmt(item.unitPrice)}</span>
-            <span className="w-16 text-right font-semibold">{fmt(item.unitPrice * item.quantity)}</span>
-          </div>
-          {item.selectedAdditionals && item.selectedAdditionals.length > 0 && (
-            <div className="text-[10px] text-gray-700 pl-8 font-medium">
-              {item.selectedAdditionals.map((a, i) => (
-                <div key={i} className="flex justify-between">
-                   <span>+ {a.name}</span>
-                   {a.price > 0 && <span>{fmt(a.price)}</span>}
-                </div>
-              ))}
-            </div>
-          )}
+          <QRCodeSVG value={ticket.trackingUrl} size={110} level="M" />
         </div>
-      ))}
+      )}
+
+      {/* 2. Cabeçalho (Senha, Loja) */}
+      <div className="text-center space-y-0.5 mb-2">
+        <p className="text-[16px] font-bold tracking-widest uppercase mb-1">
+          SENHA: {String(ticket.senha).padStart(3, "0")}
+        </p>
+        <p className="font-bold text-[12px] uppercase">{ticket.storeName}</p>
+        {ticket.storeCnpj && (
+          <p className="text-[10px] uppercase">
+            CNPJ: {ticket.storeCnpj} IE: {ticket.nfceKey ? "CONFERIR" : "000000000000"}
+          </p>
+        )}
+        {ticket.storeAddress && <p className="text-[10px] uppercase">{ticket.storeAddress}</p>}
+        {ticket.storeCity && <p className="text-[10px] uppercase">{ticket.storeCity}</p>}
+        <p className="text-[10px] mt-1">Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica</p>
+      </div>
 
       <div className="border-t border-dashed border-black my-1" />
 
-      {/* Totais */}
-      <div className="space-y-0.5 text-[11px]">
+      {/* 3. Itens */}
+      <table className="w-full text-[10px] mb-2 border-collapse">
+        <thead>
+          <tr>
+            <th className="text-left font-bold pb-1" colSpan={4}>Cód. Descrição</th>
+          </tr>
+          <tr className="border-b border-black border-dashed">
+            <th className="text-left font-bold pb-1 w-[20%]">Qtd</th>
+            <th className="text-left font-bold pb-1 w-[20%]">UN</th>
+            <th className="text-right font-bold pb-1 w-[30%]">Vl Unit</th>
+            <th className="text-right font-bold pb-1 w-[30%]">Vl Total</th>
+          </tr>
+        </thead>
+          {ticket.items.map((item, idx) => {
+            const itemTotal = item.unitPrice * item.quantity;
+            return (
+              <tbody key={item.product.id}>
+                <tr>
+                  <td colSpan={4} className="text-left uppercase font-medium pt-1">
+                    {String(idx + 1).padStart(3, "0")} - {item.product.name}
+                    {item.selectedAdditionals && item.selectedAdditionals.length > 0 && (
+                      <div className="text-[9px] text-gray-700 font-normal ml-2">
+                        + {item.selectedAdditionals.map((a) => a.additional.name).join(", ")}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="text-left pb-1">{fmtQty(item.quantity)}</td>
+                  <td className="text-left uppercase pb-1">{(item.product as any).unit ?? "UN"}</td>
+                  <td className="text-right pb-1">{item.unitPrice.toFixed(2).replace(".", ",")}</td>
+                  <td className="text-right font-semibold pb-1">{itemTotal.toFixed(2).replace(".", ",")}</td>
+                </tr>
+              </tbody>
+            );
+          })}
+      </table>
+      <div className="border-t border-dashed border-black my-1" />
+
+      {/* 4. Totais */}
+      <div className="space-y-0.5 text-[10px]">
         <div className="flex justify-between">
-          <span>Qtd Total de Itens</span>
+          <span>Qtd. Total de itens</span>
           <span>{totalItems}</span>
         </div>
         <div className="flex justify-between">
@@ -153,56 +166,55 @@ function Cupom({ ticket, printRef }: { ticket: SaleTicket; printRef: React.RefOb
           <span>Valor Total a Pagar R$</span>
           <span>{ticket.total.toFixed(2).replace(".", ",")}</span>
         </div>
-        <div className="flex justify-between">
-          <span>Tipo de pagamento</span>
-          <span>{paymentLabel[ticket.paymentMethod] ?? ticket.paymentMethod.toUpperCase()}</span>
+        <div className="flex justify-between uppercase">
+          <span>{paymentLabel[ticket.paymentMethod] ?? ticket.paymentMethod}</span>
+          <span>{ticket.total.toFixed(2).replace(".", ",")}</span>
         </div>
       </div>
 
       <div className="border-t border-dashed border-black my-1" />
 
-      {/* NFC-e Info */}
-      {ticket.nfceKey ? (
-        <div className="text-[10px] space-y-1 mb-2">
-          <p className="font-bold">CHAVE DE ACESSO:</p>
-          <p className="break-all">{ticket.nfceKey}</p>
-          <p className="text-center font-bold mt-2">Protocolo: Autorizada pelo SEFAZ</p>
-          <div className="flex justify-center py-2">
-            <div className="w-24 h-24 bg-gray-100 flex items-center justify-center text-[8px] text-center p-2 border border-gray-300">
+      {/* 5. Tributos */}
+      <div className="text-[10px] space-y-0.5">
+        <div className="flex justify-between">
+          <span>Informação dos Tributos Totais</span>
+          <span>{(ticket.total * 0.12).toFixed(2).replace(".", ",")}</span>
+        </div>
+        <p>Incidentes (Lei Federal 12.741/2012)</p>
+      </div>
+
+      <div className="border-t border-dashed border-black my-1" />
+
+      {/* 6. Operador */}
+      <div className="text-center text-[10px] space-y-0.5 uppercase">
+        <p>CX: CAIXA1 &nbsp;&nbsp;&nbsp; OP: {ticket.cashierName}</p>
+        <p className="font-bold text-[12px]">VND:{String(ticket.saleId?.slice(-4) ?? "0000")}</p>
+        <p className="font-bold text-[12px]">SENHA: {String(ticket.senha).padStart(3, "0")}</p>
+      </div>
+
+      <div className="border-t border-dashed border-black my-1" />
+
+      {/* 7. NFC-e Info */}
+      <div className="text-[9px] text-center space-y-1 mt-2">
+        <p>Consulte pela Chave de Acesso em</p>
+        <p>http://www.nfce.sefaz.gov.br/consulta</p>
+        <p className="break-all my-1">{ticket.nfceKey || "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"}</p>
+        <p>CONSUMIDOR: Consumidor não identificado</p>
+        <p>NFC-e n°{String(ticket.saleId?.slice(-4) ?? "0000")} Serie:1 {dateStr} Via Consumidor</p>
+        <p className="font-bold uppercase mt-1">EMITIDA EM CONTINGÊNCIA</p>
+        <p className="font-bold uppercase mb-2">Pendente de autorização</p>
+        
+        <div className="flex justify-center mt-2 mb-2">
+          {ticket.nfceKey ? (
+            <div className="w-28 h-28 bg-gray-100 flex items-center justify-center text-[8px] border border-gray-300">
               [QR CODE NFC-e]
             </div>
-          </div>
-          <p className="text-[8px] text-center">Consulte pela Chave de Acesso em http://nfce.sefaz.gov.br/consulta</p>
+          ) : (
+            <QRCodeSVG value={"https://www.sefaz.gov.br"} size={110} level="M" />
+          )}
         </div>
-      ) : (
-        <div className="text-[10px] space-y-0.5">
-          <div className="flex justify-between">
-            <span className="underline">Informação dos Tributos Totais</span>
-            <span>00,00</span>
-          </div>
-          <p>Incidentes (Lei Federal 12.741/2012)</p>
-        </div>
-      )}
-
-      <div className="border-t border-dashed border-black my-1" />
-
-      {/* Rodapé */}
-      <div className="text-center text-[10px] space-y-0.5">
-        <p>Cx: Caixa 1 OP :{ticket.cashierName}</p>
-        <p>VND: {String(ticket.saleId?.slice(-4) ?? "0000").toUpperCase()}</p>
-        <p className="font-bold">SENHA :{String(ticket.senha).padStart(3, "0")}</p>
+        <p className="text-[8px] mt-2">Trib. Aprox.: {(ticket.total * 0.05).toFixed(2).replace(".", ",")} Fed, {(ticket.total * 0.07).toFixed(2).replace(".", ",")} Est, FONTE: IBPT</p>
       </div>
-
-      {ticket.trackingUrl && (
-        <>
-          <div className="border-t border-dashed border-black my-1" />
-          <div className="flex flex-col items-center text-center space-y-1 my-2">
-            <p className="font-bold text-[12px] uppercase">Acompanhe seu pedido</p>
-            <QRCodeSVG value={ticket.trackingUrl} size={100} level="M" />
-            <p className="text-[9px] mt-1 text-gray-700">Aponte a câmera do celular</p>
-          </div>
-        </>
-      )}
     </div>
   );
 }
@@ -227,27 +239,143 @@ function CupomModal({
     }
   }, [open]);
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     const content = printRef.current;
     if (!content) return;
 
-    const printWindow = window.open("", "_blank", "width=400,height=700");
-    if (!printWindow) return;
-
-    printWindow.document.write(`
+    const htmlContent = `
       <html>
         <head>
           <title>Cupom Fiscal</title>
           <style>
-            @page { size: 80mm auto; margin: 0; }
-            body { margin: 0; padding: 8px; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3; color: #000; background: #fff; }
-            .border-t { border-top: 1px dashed #000; margin: 4px 0; }
-            * { box-sizing: border-box; }
+            @page { margin: 0; }
+            body { 
+              margin: 0 auto; 
+              padding: 2mm 0; 
+              width: 100%; 
+              max-width: 100%;
+              font-family: 'Courier New', Courier, monospace; 
+              font-size: 11px; 
+              line-height: 1.3; 
+              color: #000000; 
+              background: #ffffff;
+              font-weight: 600;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+              -webkit-font-smoothing: none;
+              text-rendering: optimizeLegibility;
+            }
+            * { box-sizing: border-box; color: #000000 !important; }
+            
+            .flex { display: flex; }
+            .flex-col { flex-direction: column; }
+            .items-center { align-items: center; }
+            .justify-between { justify-content: space-between; }
+            .justify-center { justify-content: center; }
+            .text-center { text-align: center; }
+            .text-left { text-align: left; }
+            .text-right { text-align: right; }
+            .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            
+            .p-2 { padding: 8px; }
+            .p-4 { padding: 16px; }
+            .pl-1 { padding-left: 4px; }
+            .pl-8 { padding-left: 32px; }
+            .pr-1 { padding-right: 4px; }
+            .pb-1 { padding-bottom: 4px; }
+            .pt-1 { padding-top: 4px; }
+            .ml-2 { margin-left: 8px; }
+            .m-0 { margin: 0; }
+            .mb-0\\.5 { margin-bottom: 2px; }
+            .mb-1 { margin-bottom: 4px; }
+            .mb-1\\.5 { margin-bottom: 6px; }
+            .mb-2 { margin-bottom: 8px; }
+            .mb-3 { margin-bottom: 12px; }
+            .mt-1 { margin-top: 4px; }
+            .mt-2 { margin-top: 8px; }
+            .my-1 { margin-top: 4px; margin-bottom: 4px; }
+            .my-2 { margin-top: 8px; margin-bottom: 8px; }
+            .mx-auto { margin-left: auto; margin-right: auto; }
+            .space-y-0\\.5 > * + * { margin-top: 2px; }
+            .space-y-1 > * + * { margin-top: 4px; }
+            
+            .w-8 { width: 32px; }
+            .w-10 { width: 40px; }
+            .w-12 { width: 48px; }
+            .w-16 { width: 64px; }
+            .w-24 { width: 96px; }
+            .w-28 { width: 112px; }
+            .w-\\[320px\\] { width: 320px; max-width: 100%; }
+            .w-full { width: 100%; }
+            .w-\\[20\\%\\] { width: 20%; }
+            .w-\\[30\\%\\] { width: 30%; }
+            .w-\\[40\\%\\] { width: 40%; }
+            .h-24 { height: 96px; }
+            .h-28 { height: 112px; }
+            .flex-1 { flex: 1 1 0%; }
+            
+            .text-\\[8px\\] { font-size: 8px; line-height: 10px; }
+            .text-\\[9px\\] { font-size: 9px; line-height: 12px; }
+            .text-\\[10px\\] { font-size: 10px; line-height: 14px; }
+            .text-\\[11px\\] { font-size: 11px; line-height: 16px; }
+            .text-\\[12px\\] { font-size: 12px; line-height: 16px; }
+            .text-\\[13px\\] { font-size: 13px; line-height: 18px; }
+            .text-\\[15px\\] { font-size: 15px; line-height: 20px; }
+            .text-\\[16px\\] { font-size: 16px; line-height: 24px; }
+            .font-bold { font-weight: 800 !important; }
+            .font-semibold { font-weight: 700 !important; }
+            .font-medium { font-weight: 600 !important; }
+            .font-normal { font-weight: 400 !important; }
+            .font-mono { font-family: 'Courier New', Courier, monospace; }
+            .uppercase { text-transform: uppercase; }
+            .tracking-widest { letter-spacing: 0.1em; }
+            .leading-tight { line-height: 1.25; }
+            .break-all { word-break: break-all; }
+            
+            .border { border: 1px solid #000 !important; }
+            .border-t { border-top: 1px dashed #000 !important; }
+            .border-b { border-bottom: 1px dashed #000 !important; }
+            .border-dashed { border-style: dashed !important; }
+            .border-black { border-color: #000 !important; }
+            .rounded-sm { border-radius: 2px; }
+            .bg-white { background-color: #fff; }
+            
+            table { width: 100%; table-layout: fixed; }
+            .border-collapse { border-collapse: collapse; }
+            th, td { word-wrap: break-word; }
+            /* Remover tons de cinza que causam pontilhado/apagado na térmica */
+            .text-gray-700, .bg-gray-100, .border-gray-300 { 
+              color: #000000 !important; 
+              border-color: #000000 !important; 
+            }
           </style>
         </head>
         <body>${content.innerHTML}</body>
       </html>
-    `);
+    `;
+
+    // @ts-ignore
+    if (window.electronAPI) {
+      const printerCaixa = localStorage.getItem('pdv_printer_caixa');
+      try {
+        // @ts-ignore
+        await window.electronAPI.printHtml({ 
+          html: htmlContent, 
+          printer: printerCaixa || undefined,
+          silent: true 
+        });
+        toast.success("Cupom impresso com sucesso!");
+        return;
+      } catch (e: any) {
+        toast.error("Erro ao imprimir: " + e.message);
+      }
+    }
+
+    // Fallback para Web
+    const printWindow = window.open("", "_blank", "width=400,height=700");
+    if (!printWindow) return;
+
+    printWindow.document.write(htmlContent);
     printWindow.document.close();
     printWindow.focus();
     setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
@@ -285,7 +413,7 @@ function CupomModal({
   );
 }
 
-import { emitirNfce } from "@/lib/focus-nfe";
+
 
 // ─── PDV Principal ────────────────────────────────────────────────────────────
 export default function PDV() {
@@ -296,7 +424,6 @@ export default function PDV() {
   const [discount, setDiscount] = useState(0);
   const [discountType, setDiscountType] = useState<"fixed" | "percent">("fixed");
   const [paymentMethod, setPaymentMethod] = useState("cash");
-  const [emitNfce, setEmitNfce] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const [cupomOpen, setCupomOpen] = useState(false);
   const [lastTicket, setLastTicket] = useState<SaleTicket | null>(null);
@@ -304,6 +431,7 @@ export default function PDV() {
   
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [customerId, setCustomerId] = useState("");
   const [deliveryType, setDeliveryType] = useState<"local" | "retirada" | "entrega">("local");
   const [deliveryAddress, setDeliveryAddress] = useState("");
 
@@ -315,6 +443,31 @@ export default function PDV() {
   const [selectedAdds, setSelectedAdds] = useState<any[]>([]);
 
   useEffect(() => { searchRef.current?.focus(); }, []);
+
+  useEffect(() => {
+    const duplicateData = localStorage.getItem("pdv_duplicate_cart");
+    if (duplicateData) {
+      try {
+        const { items, customerName, customerPhone, customerId } = JSON.parse(duplicateData);
+        if (items && items.length > 0) {
+          setCart(items.map((i: any) => ({
+            id: i.product.id,
+            name: i.product.name,
+            price: i.unit_price,
+            quantity: i.quantity,
+            type: i.product.type,
+            additionals: [] // Ignoring additionals for now or we could load them if saved
+          })));
+        }
+        if (customerName) setCustomerName(customerName);
+        if (customerPhone) setCustomerPhone(customerPhone);
+        if (customerId) setCustomerId(customerId);
+      } catch (e) {
+        console.error("Error parsing duplicate cart", e);
+      }
+      localStorage.removeItem("pdv_duplicate_cart");
+    }
+  }, []);
 
   // Profile / store
   const { data: profile, isLoading: profileLoading } = useQuery({
@@ -356,20 +509,6 @@ export default function PDV() {
     },
   });
 
-  // Configuração de Impostos (Reforma 2026)
-  const { data: taxConfig } = useQuery({
-    queryKey: ["store_tax_config", storeId],
-    enabled: !!storeId && isValidUUID(storeId),
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("store_tax_config")
-        .select("*")
-        .eq("store_id", storeId!)
-        .maybeSingle();
-      if (error) throw error;
-      return data || { cbs_rate: 0.9, ibs_rate: 0.1 };
-    },
-  });
 
   // Products — com fallback offline em localStorage
   const { data: products = [] } = useQuery({
@@ -521,7 +660,6 @@ export default function PDV() {
       if (deliveryType === "entrega" && !deliveryAddress.trim()) throw new Error("Informe o endereço de entrega");
 
       let saleId: string;
-      let nfceData: any = null;
 
       if (!isValidUUID(storeId)) {
         const offlineSale = {
@@ -560,15 +698,6 @@ export default function PDV() {
 
         const items = cart.map((i) => {
           const itemSubtotal = i.unitPrice * i.quantity;
-          // Proporcionaliza o desconto no item para base de cálculo IBS/CBS
-          const itemDiscount = subtotal > 0 ? (itemSubtotal / subtotal) * discountValue : 0;
-          const ibsCbsBase = Math.max(0, itemSubtotal - itemDiscount);
-          
-          const cbsRate = Number(taxConfig?.cbs_rate ?? 0.9);
-          const ibsRate = Number(taxConfig?.ibs_rate ?? 0.1);
-          
-          const valorCbs = Number((ibsCbsBase * (cbsRate / 100)).toFixed(2));
-          const valorIbs = Number((ibsCbsBase * (ibsRate / 100)).toFixed(2));
 
           return {
             sale_id: saleId,
@@ -576,31 +705,10 @@ export default function PDV() {
             quantity: i.quantity,
             unit_price: i.unitPrice,
             subtotal: itemSubtotal,
-            ibs_cbs_base: ibsCbsBase,
-            aliquota_cbs: cbsRate,
-            valor_cbs: valorCbs,
-            aliquota_ibs: ibsRate,
-            valor_ibs: valorIbs,
           };
         });
         const { error: itemsError } = await supabase.from("sale_items").insert(items);
         if (itemsError) throw itemsError;
-      }
-
-      // Tenta emitir NFC-e se solicitado
-      if (emitNfce && isValidUUID(storeId)) {
-        try {
-          toast.loading("Comunicando com SEFAZ...", { id: "nfce-loading" });
-          nfceData = await emitirNfce(storeId, {
-            id: saleId,
-            total,
-            items: cart,
-            paymentMethod
-          });
-          toast.success("NFC-e Autorizada!", { id: "nfce-loading" });
-        } catch (e: any) {
-          toast.error("Erro na NFC-e: " + e.message, { id: "nfce-loading" });
-        }
       }
 
       let trackingUrl: string | undefined;
@@ -609,6 +717,7 @@ export default function PDV() {
           .from("orders")
           .insert({
             store_id: storeId,
+            customer_id: customerId || null,
             customer_name: customerName.trim() || "Cliente PDV",
             customer_phone: customerPhone.trim() || null,
             status: "preparing",
@@ -638,7 +747,7 @@ export default function PDV() {
         }
       }
 
-      return { id: saleId, nfce: nfceData, trackingUrl };
+      return { id: saleId, trackingUrl };
     },
     onSuccess: (result) => {
       // Monta o ticket do cupom
@@ -663,9 +772,37 @@ export default function PDV() {
       setLastTicket(ticket);
       setSaleCounter((n) => n + 1);
       setCupomOpen(true);
-
       clearCart();
-      setEmitNfce(false); // Reset para próxima venda
+      
+      // -- Impressão automática na cozinha --
+      const kitchenPrinter = localStorage.getItem("pdv_printer_cozinha");
+      if (kitchenPrinter) {
+        // Mapeia os dados para o formato que a função de cozinha espera
+        const kitchenOrder = {
+          id: result.id,
+          customer_name: customerName.trim() || "Cliente PDV",
+          delivery_type: deliveryType,
+          delivery_address: deliveryAddress,
+          created_at: new Date().toISOString()
+        };
+        const kitchenItems = cart.map(i => ({
+          quantity: i.quantity,
+          product_name: i.product.name,
+          additionals: i.selectedAdditionals ?? []
+        }));
+        
+        const html = buildKitchenReceiptHtml(kitchenOrder, kitchenItems, store?.name ?? "Minha Loja");
+        printToKitchen(html).then(ok => {
+          if (ok) toast.success("🖨️ Comanda enviada para a cozinha!");
+        });
+      }
+
+      // Limpa o modo de teste para a próxima venda (se estava ativado)
+      if (localStorage.getItem("pdv_test_mode_once") === "true") {
+        localStorage.removeItem("pdv_test_mode_once");
+        toast.info("Modo de teste desativado. Próxima venda emitirá nota.");
+      }
+
       queryClient.invalidateQueries({ queryKey: ["products"] });
     },
     onError: (e) => toast.error("Erro na venda: " + e.message),
@@ -917,20 +1054,7 @@ export default function PDV() {
                   )}
                 </div>
 
-                {/* NFC-e Toggle */}
-                <div className="flex items-center space-x-2 py-1 px-2 bg-primary/5 rounded-md border border-primary/20">
-                  <Checkbox
-                    id="emit-nfce"
-                    checked={emitNfce}
-                    onCheckedChange={(checked) => setEmitNfce(!!checked)}
-                  />
-                  <label
-                    htmlFor="emit-nfce"
-                    className="text-xs font-medium leading-none cursor-pointer select-none"
-                  >
-                    Emitir NFC-e (Focus NFe)
-                  </label>
-                </div>
+                {/* NFC-e Toggle Removido para evitar clique acidental */}
 
                 {/* Finalize */}
                 <Button

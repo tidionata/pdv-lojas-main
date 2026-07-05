@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, ShoppingCart, Package, TrendingUp,
-  BarChart3, Settings, LogOut, Menu, X, ShoppingBag, FileText,
+  BarChart3, Settings, LogOut, Menu, X, ShoppingBag, FileText, Users
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -46,6 +46,7 @@ export default function DashboardLayout() {
     { to: "/dashboard",          icon: LayoutDashboard, label: "Dashboard" },
     { to: "/dashboard/pdv",      icon: ShoppingCart,    label: "PDV" },
     { to: "/dashboard/pedidos",  icon: ShoppingBag,     label: "Pedidos", badge: true },
+    { to: "/dashboard/clientes", icon: Users,           label: "Clientes" },
     { to: "/dashboard/products", icon: Package,         label: "Produtos" },
     { to: "/dashboard/stock",    icon: TrendingUp,      label: "Estoque" },
     { to: "/dashboard/reports",  icon: BarChart3,       label: "Relatórios" },
@@ -90,7 +91,10 @@ export default function DashboardLayout() {
         )}
       >
         <div className="flex items-center justify-between h-16 px-6 border-b border-sidebar-border">
-          <span className="text-lg font-bold text-sidebar-primary font-['Space_Grotesk']">PDVTOTAL</span>
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold text-sidebar-primary font-['Space_Grotesk']">PDVTOTAL</span>
+            <span className="text-[10px] font-medium bg-primary/20 text-primary px-1.5 py-0.5 rounded">V1.2.5</span>
+          </div>
           <button className="lg:hidden text-sidebar-foreground" onClick={() => setSidebarOpen(false)}>
             <X className="h-5 w-5" />
           </button>

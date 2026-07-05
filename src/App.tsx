@@ -20,6 +20,7 @@ const Stock        = lazy(() => import("./pages/Stock"));
 const Reports      = lazy(() => import("./pages/Reports"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const Pedidos      = lazy(() => import("./pages/Pedidos"));
+const Clientes     = lazy(() => import("./pages/Clientes"));
 const PDVPublico   = lazy(() => import("./pages/PDVPublico"));
 const Cardapio     = lazy(() => import("./pages/Cardapio"));
 const PedidoStatus = lazy(() => import("./pages/PedidoStatus"));
@@ -83,6 +84,7 @@ const App = () => (
               <Route path="reports"  element={<Reports />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="pedidos"  element={<Pedidos />} />
+              <Route path="clientes" element={<Clientes />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />
