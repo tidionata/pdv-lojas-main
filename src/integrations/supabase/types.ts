@@ -290,6 +290,7 @@ export type Database = {
           payment_method: string
           status: Database["public"]["Enums"]["sale_status"]
           store_id: string
+          table_name: string | null
           total: number
           user_id: string
         }
@@ -302,6 +303,7 @@ export type Database = {
           payment_method?: string
           status?: Database["public"]["Enums"]["sale_status"]
           store_id: string
+          table_name?: string | null
           total?: number
           user_id: string
         }
@@ -314,6 +316,7 @@ export type Database = {
           payment_method?: string
           status?: Database["public"]["Enums"]["sale_status"]
           store_id?: string
+          table_name?: string | null
           total?: number
           user_id?: string
         }
@@ -387,6 +390,10 @@ export type Database = {
           name: string
           owner_id: string
           pix_key: string | null
+          table_count: number | null
+          counter_count: number | null
+          has_counters: boolean | null
+          table_fee: number | null
           updated_at: string
         }
         Insert: {
@@ -396,6 +403,10 @@ export type Database = {
           name: string
           owner_id: string
           pix_key?: string | null
+          table_count?: number | null
+          counter_count?: number | null
+          has_counters?: boolean | null
+          table_fee?: number | null
           updated_at?: string
         }
         Update: {
@@ -405,6 +416,10 @@ export type Database = {
           name?: string
           owner_id?: string
           pix_key?: string | null
+          table_count?: number | null
+          counter_count?: number | null
+          has_counters?: boolean | null
+          table_fee?: number | null
           updated_at?: string
         }
         Relationships: []

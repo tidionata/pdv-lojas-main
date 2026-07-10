@@ -16,23 +16,18 @@ const fadeUp = {
 
 const plans = [
   {
-    name: "Starter",
-    price: "59,90",
-    features: ["Até 50 produtos", "1 usuário", "PDV completo", "Relatórios avançados", "Suporte via WhatsApp"],
-    popular: false,
-  },
-  {
-    name: "Pro",
-    price: "89,90",
-    features: ["Até 150 produtos", "Até 3 usuários", "PDV + Cardápio online", "Atendimento via mesa", "Suporte via WhatsApp", "Pagamento Pix com QR Code"],
+    name: "Premium",
+    price: "Sob consulta",
+    features: [
+      "Produtos ilimitados",
+      "Usuários ilimitados",
+      "PDV + Cardápio online",
+      "Gestão de Mesas e Balcões",
+      "Controle de fiados e fluxo de caixa",
+      "Suporte prioritário via WhatsApp"
+    ],
     popular: true,
-  },
-  {
-    name: "Business",
-    price: "149,99",
-    features: ["Produtos ilimitados", "Usuários ilimitados", "Tudo do plano Pro", "Multi-loja (2 lojas)", "Gerenciamento completo", "Suporte prioritário"],
-    popular: false,
-  },
+  }
 ];
 
 const pains = [
@@ -152,9 +147,10 @@ export default function Landing() {
           <h2 className="text-3xl md:text-4xl font-bold text-center mb-4">
             Planos simples e transparentes 💰
           </h2>
-          <p className="text-muted-foreground text-center mb-12">Escolha o plano ideal para o seu negócio.</p>
-          <div className="grid md:grid-cols-3 gap-6">
-            {plans.map((plan, i) => (
+          <p className="text-muted-foreground text-center mb-12">Tudo que você precisa em uma única assinatura.</p>
+          <div className="flex justify-center">
+            <div className="w-full max-w-md">
+              {plans.map((plan, i) => (
               <motion.div
                 key={i}
                 className={`relative rounded-2xl p-8 border bg-card shadow-sm ${
@@ -169,8 +165,14 @@ export default function Landing() {
                 )}
                 <h3 className="text-xl font-bold mb-2">{plan.name}</h3>
                 <div className="mb-6">
-                  <span className="text-4xl font-extrabold">R${plan.price}</span>
-                  <span className="text-muted-foreground">/mês</span>
+                  {plan.price === "Sob consulta" ? (
+                    <span className="text-3xl font-extrabold">{plan.price}</span>
+                  ) : (
+                    <>
+                      <span className="text-4xl font-extrabold">R${plan.price}</span>
+                      <span className="text-muted-foreground">/mês</span>
+                    </>
+                  )}
                 </div>
                 <ul className="space-y-3 mb-8">
                   {plan.features.map((f, j) => (
@@ -181,10 +183,11 @@ export default function Landing() {
                   ))}
                 </ul>
                 <Button className="w-full" variant={plan.popular ? "default" : "outline"} asChild>
-                  <Link to="/auth?tab=signup">Começar 7 dias grátis</Link>
+                  <a href="https://wa.me/5569992922621?text=Olá,%20gostaria%20de%20saber%20mais%20sobre%20o%20plano%20Premium" target="_blank" rel="noopener noreferrer">Falar no WhatsApp</a>
                 </Button>
               </motion.div>
             ))}
+            </div>
           </div>
         </div>
       </section>

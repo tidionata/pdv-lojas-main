@@ -9,6 +9,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { SyncIndicator } from "@/components/SyncIndicator";
+import { syncEngine } from "@/lib/syncEngine";
 
 export default function DashboardLayout() {
   const { signOut, user } = useAuth();
@@ -26,6 +28,15 @@ export default function DashboardLayout() {
       return data;
     },
   });
+
+  // ── Inicializa o motor de sincronização offline quando tiver storeId ──────
+  useEffect(() => {
+    if (profile?.store_id) {
+      syncEngine.setStoreId(profile.store_id);
+      syncEngine.start(60000); // Sincroniza a cada 60 segundos
+    }
+    return () => syncEngine.stop();
+  }, [profile?.store_id]);
 
   // ── Store config (incl. config_orcamento) ────────────────────────────────────────
   const { data: storeConfig } = useQuery({
@@ -45,6 +56,7 @@ export default function DashboardLayout() {
   const navItems = [
     { to: "/dashboard",          icon: LayoutDashboard, label: "Dashboard" },
     { to: "/dashboard/pdv",      icon: ShoppingCart,    label: "PDV" },
+    { to: "/dashboard/delivery", icon: ShoppingCart,    label: "Delivery" },
     { to: "/dashboard/pedidos",  icon: ShoppingBag,     label: "Pedidos", badge: true },
     { to: "/dashboard/clientes", icon: Users,           label: "Clientes" },
     { to: "/dashboard/products", icon: Package,         label: "Produtos" },
@@ -93,7 +105,7 @@ export default function DashboardLayout() {
         <div className="flex items-center justify-between h-16 px-6 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
             <span className="text-lg font-bold text-sidebar-primary font-['Space_Grotesk']">PDVTOTAL</span>
-            <span className="text-[10px] font-medium bg-primary/20 text-primary px-1.5 py-0.5 rounded">V1.2.5</span>
+            <span className="text-[10px] font-medium bg-primary/20 text-primary px-1.5 py-0.5 rounded">V1.2.6</span>
           </div>
           <button className="lg:hidden text-sidebar-foreground" onClick={() => setSidebarOpen(false)}>
             <X className="h-5 w-5" />
@@ -148,6 +160,7 @@ export default function DashboardLayout() {
           </button>
           <div className="flex-1" />
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <SyncIndicator />
             <span className="hidden sm:inline">{user?.email}</span>
           </div>
         </header>

@@ -14,7 +14,7 @@ import {
   Link2, Store, Copy, ExternalLink, ShoppingCart,
   UtensilsCrossed, AlertCircle, RefreshCw, Eye, EyeOff,
   FileText, Save, ExternalLink as ExtLink, Shield, Radio, Printer,
-  CheckCircle2, Star, Clock, ShoppingBag, Receipt, Percent,
+  CheckCircle2, Star, Clock, ShoppingBag, Receipt, Percent, LayoutGrid,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -57,12 +57,13 @@ function maskCnpj(v: string) {
 export default function SettingsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "assinatura" | "ifood" | "impressora" | "pdv">("links");
+  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "assinatura" | "ifood" | "impressora" | "pdv" | "mesas">("links");
   const [sefazServico, setSefazServico] = useState<SefazServico>("NFeAutorizacao");
   const [showToken, setShowToken] = useState(false);
   const [nfe, setNfe] = useState<NfeConfig>({});
   const [ifood, setIfood] = useState<IfoodConfig>({});
   const [nfeLoaded, setNfeLoaded] = useState(false);
+  const [mesasConfig, setMesasConfig] = useState({ table_count: 0, has_counters: false, counter_count: 0, table_fee: 0 });
 
   // ── Query: perfil ──────────────────────────────────────────────────────────
   const {
@@ -92,7 +93,7 @@ export default function SettingsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("stores")
-        .select("id, name, active_menu_type")
+        .select("id, name, active_menu_type, table_count, has_counters, counter_count, table_fee")
         .eq("id", profile!.store_id!)
         .single();
       if (error) throw error;
@@ -120,6 +121,17 @@ export default function SettingsPage() {
   const [printers, setPrinters] = useState<any[]>([]);
   const [selectedCaixaPrinter, setSelectedCaixaPrinter] = useState(localStorage.getItem('pdv_printer_caixa') || '');
   const [selectedCozinhaPrinter, setSelectedCozinhaPrinter] = useState(localStorage.getItem('pdv_printer_cozinha') || '');
+
+  useEffect(() => {
+    if (store) {
+      setMesasConfig({
+        table_count: store.table_count || 0,
+        has_counters: store.has_counters || false,
+        counter_count: store.counter_count || 0,
+        table_fee: store.table_fee || 0
+      });
+    }
+  }, [store]);
 
   useEffect(() => {
     // @ts-ignore
@@ -288,6 +300,29 @@ export default function SettingsPage() {
     onError: (e: any) => toast.error(`Erro ao trocar cardápio: ${e.message}`),
   });
 
+  // ⚡ Mutation: salvar mesas ⚡
+  const mesasMutation = useMutation({
+    mutationFn: async () => {
+      if (!store?.id) throw new Error("Loja não encontrada");
+      const { error } = await supabase
+        .from("stores")
+        .update({ 
+          table_count: mesasConfig.table_count,
+          has_counters: mesasConfig.has_counters,
+          counter_count: mesasConfig.counter_count,
+          table_fee: mesasConfig.table_fee
+        })
+        .eq("id", store.id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["store"] });
+      toast.success("Configurações de mesas salvas!");
+    },
+    onError: (error: any) => toast.error("Erro ao salvar: " + error.message)
+  });
+
   // ── Componente: caixa de link ──────────────────────────────────────────────
   function LinkBox({ url }: { url: string | null }) {
     if (profileLoading) return <Skeleton className="h-10 w-full rounded-lg" />;
@@ -346,6 +381,7 @@ export default function SettingsPage() {
           { id: "assinatura",  label: "Assinatura",  icon: Star },
           { id: "impressora",  label: "Impressora",  icon: Printer },
           { id: "pdv",         label: "PDV",         icon: ShoppingCart },
+          { id: "mesas",       label: "Mesas",       icon: LayoutGrid },
         ] as const).map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -631,32 +667,17 @@ export default function SettingsPage() {
 
               <h3 className="font-bold text-lg">Trocar ou Assinar Plano</h3>
               <p className="text-sm text-muted-foreground -mt-4">Escolha o plano ideal para o seu negócio e faça o upgrade instantaneamente.</p>
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="flex justify-center mt-4">
+                <div className="w-full max-w-sm">
                 {[
                   { 
-                    id: "starter", 
-                    name: "Starter", 
-                    price: "59,90", 
-                    items: "50 prod.", 
-                    user: "1 usuário",
-                    description: "Ideal para começar"
-                  },
-                  { 
-                    id: "pro", 
-                    name: "Pro", 
-                    price: "89,90", 
-                    items: "150 prod.", 
-                    user: "3 usuários",
-                    description: "O melhor custo-benefício"
-                  },
-                  { 
-                    id: "business", 
-                    name: "Business", 
-                    price: "149,99", 
-                    items: "Ilimitado", 
-                    user: "Ilimitado",
-                    description: "Para grandes operações"
-                  },
+                    id: "premium", 
+                    name: "Premium", 
+                    price: "Sob consulta", 
+                    items: "Produtos ilimitados", 
+                    user: "Usuários ilimitados",
+                    description: "Tudo liberado para sua loja crescer"
+                  }
                 ].map((p) => (
                   <div key={p.id} className={cn(
                     "relative p-5 rounded-2xl border-2 transition-all flex flex-col gap-4 shadow-sm",
@@ -676,8 +697,14 @@ export default function SettingsPage() {
                     </div>
 
                     <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-black text-foreground">R${p.price}</span>
-                      <span className="text-xs text-muted-foreground">/mês</span>
+                      {p.price === "Sob consulta" ? (
+                        <span className="text-2xl font-black text-foreground">{p.price}</span>
+                      ) : (
+                        <>
+                          <span className="text-2xl font-black text-foreground">R${p.price}</span>
+                          <span className="text-xs text-muted-foreground">/mês</span>
+                        </>
+                      )}
                     </div>
 
                     <ul className="space-y-2 flex-1">
@@ -706,6 +733,7 @@ export default function SettingsPage() {
                     </Button>
                   </div>
                 ))}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -873,7 +901,72 @@ export default function SettingsPage() {
                 </Label>
               </div>
             </div>
+          </CardContent>
+        </Card>
+      )}
 
+      {/* 🔴 ABA: MESAS 🔴 */}
+      {activeTab === "mesas" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xl">Configurações de Mesas e Balcões</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
+              <div>
+                <Label>Quantidade de Mesas</Label>
+                <Input 
+                  type="number" 
+                  min="0"
+                  value={mesasConfig.table_count} 
+                  onChange={(e) => setMesasConfig({...mesasConfig, table_count: Number(e.target.value)})}
+                  placeholder="Ex: 12"
+                />
+              </div>
+
+              <div>
+                <Label>Acréscimo automático (%)</Label>
+                <Input 
+                  type="number" 
+                  min="0"
+                  max="100"
+                  value={mesasConfig.table_fee} 
+                  onChange={(e) => setMesasConfig({...mesasConfig, table_fee: Number(e.target.value)})}
+                  placeholder="Ex: 10 para 10% (opcional)"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox"
+                  id="has_counters"
+                  checked={mesasConfig.has_counters}
+                  onChange={(e) => setMesasConfig({...mesasConfig, has_counters: e.target.checked})}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <Label htmlFor="has_counters">Habilitar controle de balcões</Label>
+              </div>
+
+              {mesasConfig.has_counters && (
+                <div>
+                  <Label>Quantidade de Balcões</Label>
+                  <Input 
+                    type="number" 
+                    min="0"
+                    value={mesasConfig.counter_count} 
+                    onChange={(e) => setMesasConfig({...mesasConfig, counter_count: Number(e.target.value)})}
+                    placeholder="Ex: 2"
+                  />
+                </div>
+              )}
+
+              <Button 
+                onClick={() => mesasMutation.mutate()} 
+                disabled={mesasMutation.isPending}
+                className="w-full"
+              >
+                {mesasMutation.isPending ? "Salvando..." : "Salvar Configurações"}
+              </Button>
             </div>
           </CardContent>
         </Card>

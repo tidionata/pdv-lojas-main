@@ -20,10 +20,13 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   ShoppingCart, Search, Plus, Minus, Trash2, CreditCard,
   Banknote, QrCode, Receipt, Percent, DollarSign, X, Printer,
-  CheckCircle2, Image as ImageIcon,
+  CheckCircle2, Image as ImageIcon, UtensilsCrossed, Edit2, Pencil,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { printToKitchen, buildKitchenReceiptHtml } from "@/lib/electronPrinting";
+import { db } from "@/lib/db";
+import { CustomerSearchModal } from "@/components/Clientes/CustomerSearchModal";
+import { ClienteFormModal } from "@/components/Clientes/ClienteFormModal";
 
 type Product = Tables<"products">;
 
@@ -49,6 +52,10 @@ interface SaleTicket {
   storeCnpj: string;
   storeAddress: string;
   storeCity: string;
+  customerName?: string;
+  customerPhone?: string;
+  deliveryAddress?: string;
+  deliveryNotes?: string;
   createdAt: Date;
   nfceKey?: string;
   nfceUrl?: string;
@@ -131,7 +138,7 @@ function Cupom({ ticket, printRef }: { ticket: SaleTicket; printRef: React.RefOb
                     {String(idx + 1).padStart(3, "0")} - {item.product.name}
                     {item.selectedAdditionals && item.selectedAdditionals.length > 0 && (
                       <div className="text-[9px] text-gray-700 font-normal ml-2">
-                        + {item.selectedAdditionals.map((a) => a.additional.name).join(", ")}
+                        + {item.selectedAdditionals.map((a) => a.name).join(", ")}
                       </div>
                     )}
                   </td>
@@ -199,7 +206,11 @@ function Cupom({ ticket, printRef }: { ticket: SaleTicket; printRef: React.RefOb
         <p>Consulte pela Chave de Acesso em</p>
         <p>http://www.nfce.sefaz.gov.br/consulta</p>
         <p className="break-all my-1">{ticket.nfceKey || "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"}</p>
-        <p>CONSUMIDOR: Consumidor não identificado</p>
+        <div className="my-1">
+          <p>CONSUMIDOR: {ticket.customerName ? `${ticket.customerName} ${ticket.customerPhone ? `- ${ticket.customerPhone}` : ""}` : "Consumidor não identificado"}</p>
+          {ticket.deliveryAddress && <p>ENDEREÇO: {ticket.deliveryAddress}</p>}
+          {ticket.deliveryNotes && <p>OBS: {ticket.deliveryNotes}</p>}
+        </div>
         <p>NFC-e n°{String(ticket.saleId?.slice(-4) ?? "0000")} Serie:1 {dateStr} Via Consumidor</p>
         <p className="font-bold uppercase mt-1">EMITIDA EM CONTINGÊNCIA</p>
         <p className="font-bold uppercase mb-2">Pendente de autorização</p>
@@ -416,7 +427,7 @@ function CupomModal({
 
 
 // ─── PDV Principal ────────────────────────────────────────────────────────────
-export default function PDV() {
+export default function PDV({ isDeliveryMode = false }: { isDeliveryMode?: boolean }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -428,12 +439,18 @@ export default function PDV() {
   const [cupomOpen, setCupomOpen] = useState(false);
   const [lastTicket, setLastTicket] = useState<SaleTicket | null>(null);
   const [saleCounter, setSaleCounter] = useState(1);
+  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  const [pendingSaleId, setPendingSaleId] = useState<string | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
   
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerId, setCustomerId] = useState("");
-  const [deliveryType, setDeliveryType] = useState<"local" | "retirada" | "entrega">("local");
+  const [customerSearchModalOpen, setCustomerSearchModalOpen] = useState(false);
+  const [customerFormModalOpen, setCustomerFormModalOpen] = useState(false);
+  const [deliveryType, setDeliveryType] = useState<"local" | "retirada" | "entrega">(isDeliveryMode ? "entrega" : "local");
   const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryNotes, setDeliveryNotes] = useState("");
 
   // Modal de Produto (Peso e Adicionais)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -509,30 +526,61 @@ export default function PDV() {
     },
   });
 
+  // Busca vendas pendentes para as mesas
+  const { data: pendingSales = [], refetch: refetchPending } = useQuery({
+    queryKey: ["sales_pending", storeId],
+    enabled: !!storeId && isValidUUID(storeId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("sales")
+        .select("id, table_name, total, notes")
+        .eq("store_id", storeId)
+        .eq("status", "pending")
+        .not("table_name", "is", null);
+      if (error) throw error;
+      return data || [];
+    },
+    refetchInterval: 5000
+  });
 
-  // Products — com fallback offline em localStorage
+  // Products — lê do Dexie (banco local) quando offline, faz sync quando online
   const { data: products = [] } = useQuery({
     queryKey: ["products", storeId],
     enabled: !!storeId,
     queryFn: async () => {
-      try {
-        const { data, error } = await supabase
-          .from("products")
-          .select("*")
-          .eq("store_id", storeId!)
-          .eq("active", true)
-          .order("name");
-        if (error) throw error;
-        return data as Product[];
-      } catch {
-        // Supabase offline → usa localStorage
+      // 1. Tenta buscar do Supabase (online)
+      if (navigator.onLine) {
         try {
-          const list: Product[] = JSON.parse(
-            localStorage.getItem(`products_offline_${storeId}`) || "[]"
-          );
-          return list.filter(p => p.active);
-        } catch { return []; }
+          const { data, error } = await supabase
+            .from("products")
+            .select("*")
+            .eq("store_id", storeId!)
+            .eq("active", true)
+            .order("name");
+          if (error) throw error;
+          // Salva no banco local para usar offline depois
+          const localData = (data as Product[]).map(p => ({ ...p, _sync_status: 'synced' as const }));
+          await db.products.bulkPut(localData);
+          return data as Product[];
+        } catch (err) {
+          console.warn("[PDV] Supabase indisponível, usando banco local.", err);
+        }
       }
+      // 2. Offline: lê do Dexie
+      const localProducts = await db.products
+        .where("store_id").equals(storeId!)
+        .toArray();
+      if (localProducts.length > 0) {
+        toast.info("📦 Usando produtos do banco local (modo offline)");
+        return localProducts.filter(p => (p as any).active !== false) as unknown as Product[];
+      }
+      // 3. Último recurso: localStorage
+      try {
+        const list: Product[] = JSON.parse(
+          localStorage.getItem(`products_offline_${storeId}`) || "[]"
+        );
+        return list.filter(p => p.active);
+      } catch { return []; }
     },
   });
 
@@ -541,7 +589,8 @@ export default function PDV() {
   const filtered = useMemo(() => {
     const activeMenu = (store as any)?.active_menu_type || 'both';
     
-    const menuFiltered = products.filter(p => {
+    const menuFiltered = (products || []).filter(p => {
+      if (!p || !p.name) return false;
       if (activeMenu === 'both') return true;
       const prodMenu = (p as any).menu_type || 'both';
       return prodMenu === 'both' || prodMenu === activeMenu;
@@ -552,9 +601,11 @@ export default function PDV() {
     const q = search.toLowerCase();
     return menuFiltered.filter(
       (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.barcode?.toLowerCase().includes(q) ||
-        p.category?.toLowerCase().includes(q)
+        p && p.name && (
+          p.name.toLowerCase().includes(q) ||
+          p.barcode?.toLowerCase().includes(q) ||
+          p.category?.toLowerCase().includes(q)
+        )
     );
   }, [products, search, store]);
 
@@ -643,8 +694,11 @@ export default function PDV() {
     );
   };
 
-  const removeFromCart = (cartItemId: string) =>
-    setCart((prev) => prev.filter((i) => i.cartItemId !== cartItemId));
+  const removeFromCart = (cartItemId: string) => setCart((prev) => prev.filter((i) => i.cartItemId !== cartItemId));
+
+  const updateItemPrice = (cartItemId: string, newPrice: number) => {
+    setCart((prev) => prev.map((i) => (i.cartItemId === cartItemId ? { ...i, unitPrice: newPrice } : i)));
+  };
 
   const clearCart = () => { setCart([]); setDiscount(0); };
 
@@ -655,104 +709,184 @@ export default function PDV() {
 
   // Finalize sale
   const saleMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (opts?: { pendingOnly?: boolean }) => {
+      const isPending = opts?.pendingOnly === true;
       if (cart.length === 0) throw new Error("Carrinho vazio");
       if (deliveryType === "entrega" && !deliveryAddress.trim()) throw new Error("Informe o endereço de entrega");
+      if (isDeliveryMode && !customerName.trim() && !customerId) {
+        throw new Error("O nome do cliente é obrigatório para pedidos de Delivery/WhatsApp.");
+      }
 
       let saleId: string;
+      const statusToSave = isPending ? "pending" : "completed";
+      const notesToSave = isPending ? JSON.stringify(cart) : null;
 
-      if (!isValidUUID(storeId)) {
-        const offlineSale = {
-          id: `offline-${Date.now()}`,
+      const saveOffline = async () => {
+        if (isPending) throw new Error("Não é possível salvar mesa no modo offline.");
+
+        const offlineId = crypto.randomUUID ? crypto.randomUUID() : `offline-${Date.now()}`;
+        const now = new Date().toISOString();
+
+        // Salva a venda no banco local
+        await db.orders.add({
+          id: offlineId,
           store_id: storeId,
-          user_id: profileId,
           total,
+          status: 'completed',
+          origin: 'pdv',
+          payment_method: paymentMethod,
           discount: discountValue,
           discount_type: discountType,
-          payment_method: paymentMethod,
-          status: "completed",
-          created_at: new Date().toISOString(),
-          items: cart,
-        };
-        const key = `sales_offline_${storeId}`;
-        const prev = JSON.parse(localStorage.getItem(key) || "[]");
-        localStorage.setItem(key, JSON.stringify([...prev, offlineSale]));
-        toast.info("Venda salva localmente (modo offline)");
-        saleId = offlineSale.id;
-      } else {
-        const { data: sale, error: saleError } = await supabase
-          .from("sales")
-          .insert({
-            store_id: storeId,
-            user_id: profileId,
-            total,
-            discount: discountValue,
-            discount_type: discountType,
-            payment_method: paymentMethod,
-            status: "completed",
-          })
-          .select("id")
-          .single();
-        if (saleError) throw saleError;
-        saleId = sale.id;
-
-        const items = cart.map((i) => {
-          const itemSubtotal = i.unitPrice * i.quantity;
-
-          return {
-            sale_id: saleId,
-            product_id: isValidUUID(i.product.id) ? i.product.id : null,
-            quantity: i.quantity,
-            unit_price: i.unitPrice,
-            subtotal: itemSubtotal,
-          };
+          customer_name: customerName.trim() || 'Consumidor Final',
+          table_name: selectedTable ?? undefined,
+          created_at: now,
+          _sync_status: 'pending_insert'
         });
-        const { error: itemsError } = await supabase.from("sale_items").insert(items);
-        if (itemsError) throw itemsError;
+
+        // Salva os itens da venda no banco local
+        const offlineItems = cart.map(i => ({
+          id: crypto.randomUUID ? crypto.randomUUID() : `offline-item-${Date.now()}-${Math.random()}`,
+          sale_id: offlineId,
+          product_id: isValidUUID(i.product.id) ? i.product.id : undefined,
+          quantity: i.quantity,
+          unit_price: i.unitPrice,
+          subtotal: i.unitPrice * i.quantity,
+          _sync_status: 'pending_insert' as const
+        }));
+        await db.order_items.bulkAdd(offlineItems);
+
+        toast.info("📶 Conexão falhou — Venda salva localmente! Será sincronizada quando a conexão voltar.");
+        return { id: offlineId, trackingUrl: undefined };
+      };
+
+      // ─── OFFLINE-FIRST: salva no Dexie se não tiver internet ────────────────
+      if (!navigator.onLine) {
+        return await saveOffline();
       }
 
-      let trackingUrl: string | undefined;
-      if (localStorage.getItem("pdv_tracking_qr") === "true" && isValidUUID(storeId)) {
-        const { data: orderData, error: orderError } = await supabase
-          .from("orders")
-          .insert({
-            store_id: storeId,
-            customer_id: customerId || null,
-            customer_name: customerName.trim() || "Cliente PDV",
-            customer_phone: customerPhone.trim() || null,
-            status: "preparing",
-            total,
-            payment_method: paymentMethod,
-            origin: "pdv",
-            delivery_type: deliveryType,
-            delivery_address: deliveryType === "entrega" ? deliveryAddress.trim() : null,
-          })
-          .select("id")
-          .single();
-        if (!orderError && orderData) {
-          trackingUrl = `${window.location.origin}/pedido/${orderData.id}`;
-          const orderItems = cart.map((i) => ({
-             order_id: orderData.id,
-             product_id: isValidUUID(i.product.id) ? i.product.id : null,
-             product_name: i.product.name,
-             unit_price: i.unitPrice,
-             quantity: i.quantity,
-             subtotal: i.unitPrice * i.quantity,
-             additionals: i.selectedAdditionals ?? []
-          }));
-          await supabase.from("order_items").insert(orderItems);
-        } else if (orderError) {
-          console.error("Erro ao gerar link de rastreio:", orderError);
-          toast.error("Erro ao gerar link de rastreio: " + orderError.message);
+      // ─── ONLINE: salva normalmente no Supabase ────────────────────────────
+      try {
+        if (pendingSaleId) {
+          const { error: updateError } = await supabase
+            .from("sales")
+            .update({
+              total,
+              discount: discountValue,
+              discount_type: discountType,
+              payment_method: paymentMethod,
+              status: statusToSave as any,
+              notes: notesToSave
+            })
+            .eq("id", pendingSaleId);
+          if (updateError) throw updateError;
+          saleId = pendingSaleId;
+        } else {
+          const { data: sale, error: saleError } = await supabase
+            .from("sales")
+            .insert({
+              store_id: storeId,
+              user_id: profileId,
+              table_name: selectedTable,
+              total,
+              discount: discountValue,
+              discount_type: discountType,
+              payment_method: paymentMethod,
+              status: statusToSave as any,
+              notes: notesToSave
+            })
+            .select("id")
+            .single();
+          if (saleError) throw saleError;
+          saleId = sale.id;
         }
+
+        if (!isPending) {
+          const items = cart.map((i) => {
+            const itemSubtotal = i.unitPrice * i.quantity;
+            return {
+              sale_id: saleId,
+              product_id: isValidUUID(i.product.id) ? i.product.id : null,
+              quantity: i.quantity,
+              unit_price: i.unitPrice,
+              subtotal: itemSubtotal,
+            };
+          });
+          const { error: itemsError } = await supabase.from("sale_items").insert(items);
+          if (itemsError) throw itemsError;
+        }
+
+        let trackingUrl: string | undefined;
+        if (localStorage.getItem("pdv_tracking_qr") === "true" && isValidUUID(storeId)) {
+          const { data: orderData, error: orderError } = await supabase
+            .from("orders")
+            .insert({
+              store_id: storeId,
+              customer_id: customerId || null,
+              customer_name: customerName.trim() || "Cliente PDV",
+              customer_phone: customerPhone.trim() || null,
+              status: "preparing",
+              total,
+              payment_method: paymentMethod,
+              origin: "pdv",
+              delivery_type: deliveryType,
+              delivery_address: deliveryType === "entrega" ? deliveryAddress.trim() : null,
+            })
+            .select("id")
+            .single();
+          if (!orderError && orderData) {
+            trackingUrl = `${window.location.origin}/pedido/${orderData.id}`;
+            const orderItems = cart.map((i) => ({
+               order_id: orderData.id,
+               product_id: isValidUUID(i.product.id) ? i.product.id : null,
+               product_name: i.product.name,
+               unit_price: i.unitPrice,
+               quantity: i.quantity,
+               subtotal: i.unitPrice * i.quantity,
+               additionals: i.selectedAdditionals ?? []
+            }));
+            await supabase.from("order_items").insert(orderItems);
+          } else if (orderError) {
+            console.error("Erro ao gerar link de rastreio:", orderError);
+            toast.error("Erro ao gerar link de rastreio: " + orderError.message);
+          }
+        }
+
+        return { id: saleId, trackingUrl };
+      } catch (err: any) {
+        if (err.message === "Failed to fetch" || err.message?.includes("fetch")) {
+          console.warn("Falha de rede ao tentar salvar online, recorrendo ao offline:", err);
+          return await saveOffline();
+        }
+        throw err;
+      }
+    },
+    onSuccess: (data, variables) => {
+      const isPending = variables?.pendingOnly === true;
+      if (isPending) {
+         toast.success("Mesa salva com sucesso!");
+         setCart([]);
+         setSelectedTable(null);
+         setPendingSaleId(null);
+         refetchPending();
+         return;
       }
 
-      return { id: saleId, trackingUrl };
-    },
-    onSuccess: (result) => {
-      // Monta o ticket do cupom
-      const ticket: SaleTicket = {
-        saleId: result.id,
+      toast.success("Venda finalizada com sucesso!");
+      setCart([]);
+      setDiscount(0);
+      setCustomerName("");
+      setCustomerPhone("");
+      setCustomerId("");
+      setDeliveryType("local");
+      setDeliveryAddress("");
+      setDeliveryNotes("");
+      setSaleCounter(c => c + 1);
+      setSelectedTable(null);
+      setPendingSaleId(null);
+      refetchPending();
+      
+      const newTicket: SaleTicket = {
+        saleId: data?.id || `off-${Date.now()}`,
         senha: saleCounter,
         items: [...cart],
         subtotal,
@@ -764,22 +898,22 @@ export default function PDV() {
         storeCnpj: (store as any)?.cnpj ?? "",
         storeAddress: (store as any)?.address ?? "",
         storeCity: (store as any)?.city ?? "",
+        customerName,
+        customerPhone,
+        deliveryAddress,
+        deliveryNotes,
         createdAt: new Date(),
-        nfceKey: result.nfce?.chave_nfe,
-        nfceUrl: result.nfce?.caminho_xml_nota_fiscal,
-        trackingUrl: result.trackingUrl,
+        trackingUrl: data?.trackingUrl,
       };
-      setLastTicket(ticket);
-      setSaleCounter((n) => n + 1);
+      setLastTicket(newTicket);
       setCupomOpen(true);
-      clearCart();
       
       // -- Impressão automática na cozinha --
       const kitchenPrinter = localStorage.getItem("pdv_printer_cozinha");
       if (kitchenPrinter) {
         // Mapeia os dados para o formato que a função de cozinha espera
         const kitchenOrder = {
-          id: result.id,
+          id: data.id,
           customer_name: customerName.trim() || "Cliente PDV",
           delivery_type: deliveryType,
           delivery_address: deliveryAddress,
@@ -818,9 +952,89 @@ export default function PDV() {
     { value: "pix", label: "PIX", icon: QrCode },
   ];
 
+  const tablesEnabled = !isDeliveryMode && ((store?.table_count || 0) > 0 || store?.has_counters);
+
+  if (tablesEnabled && !selectedTable) {
+    const renderBoxes = (prefix: string, count: number) => {
+      return Array.from({ length: count }).map((_, i) => {
+        const name = `${prefix} ${i + 1}`;
+        const pendingSale = pendingSales.find(s => s.table_name === name);
+        const isOccupied = !!pendingSale; 
+        return (
+          <Button 
+            key={name}
+            variant={isOccupied ? "default" : "outline"}
+            className={`h-32 text-xl font-bold flex flex-col gap-2 ${isOccupied ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-800 border-gray-300'}`}
+            onClick={() => {
+              setSelectedTable(name);
+              if (pendingSale) {
+                setPendingSaleId(pendingSale.id);
+                try {
+                  if (pendingSale.notes) {
+                    const loadedCart = JSON.parse(pendingSale.notes);
+                    setCart(loadedCart);
+                  }
+                } catch (e) {
+                  console.error("Erro ao carregar carrinho salvo", e);
+                  setCart([]);
+                }
+              } else {
+                setPendingSaleId(null);
+                setCart([]);
+              }
+            }}
+          >
+            <span>{name}</span>
+            {isOccupied && <span className="text-sm font-normal bg-red-800 px-2 py-1 rounded">R$ {pendingSale.total?.toFixed(2)}</span>}
+          </Button>
+        );
+      });
+    };
+
+    return (
+      <div className="space-y-6 max-w-7xl mx-auto pb-12">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold font-['Space_Grotesk']">Visão Geral do Salão</h2>
+        </div>
+        
+        {(store?.table_count || 0) > 0 && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold border-b pb-2 text-gray-700">Mesas Disponíveis</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
+              {renderBoxes("Mesa", store?.table_count || 0)}
+            </div>
+          </div>
+        )}
+
+        {store?.has_counters && (store?.counter_count || 0) > 0 && (
+          <div className="space-y-4 mt-8">
+            <h3 className="text-lg font-semibold border-b pb-2 text-gray-700">Balcões</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
+              {renderBoxes("Balcão", store?.counter_count || 0)}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
-      <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-8rem)]">
+      {selectedTable && (
+        <div className="mb-4 flex items-center justify-between bg-blue-50 border border-blue-200 p-3 rounded-lg text-blue-800 shadow-sm">
+          <span className="font-bold text-lg flex items-center gap-2">
+            <UtensilsCrossed className="w-5 h-5" />
+            Atendendo: {selectedTable}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => {
+            setSelectedTable(null);
+            setCart([]);
+          }}>
+            Voltar para Visão do Salão
+          </Button>
+        </div>
+      )}
+      <div className={`flex flex-col lg:flex-row gap-4 ${selectedTable ? 'h-[calc(100vh-12rem)]' : 'h-[calc(100vh-8rem)]'}`}>
         {/* Left: Product search & grid */}
         <div className="flex-1 flex flex-col min-w-0 gap-4">
           <div className="relative">
@@ -893,9 +1107,14 @@ export default function PDV() {
                 )}
               </CardTitle>
               {cart.length > 0 && (
-                <Button variant="ghost" size="sm" onClick={clearCart} className="text-destructive hover:text-destructive">
-                  <X className="h-4 w-4 mr-1" /> Limpar
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setEditModalOpen(true)} className="text-primary hover:bg-primary/10">
+                    <Pencil className="h-4 w-4 mr-1" /> Editar
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={clearCart} className="text-destructive hover:text-destructive">
+                    <X className="h-4 w-4 mr-1" /> Limpar
+                  </Button>
+                </div>
               )}
             </div>
           </CardHeader>
@@ -929,7 +1148,7 @@ export default function PDV() {
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
-                      <span className="text-sm font-semibold w-20 text-right">
+                      <span className="text-sm font-bold w-20 text-right text-emerald-600">
                         {formatCurrency(item.unitPrice * item.quantity)}
                       </span>
                     </div>
@@ -1009,19 +1228,29 @@ export default function PDV() {
 
                 {/* Dados do Cliente e Entrega */}
                 <div className="space-y-2 pt-2 border-t">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input 
-                      placeholder="Nome do Cliente (Opcional)" 
-                      value={customerName}
-                      onChange={e => setCustomerName(e.target.value)}
-                      className="h-8 text-xs"
-                    />
-                    <Input 
-                      placeholder="Telefone (Opcional)" 
-                      value={customerPhone}
-                      onChange={e => setCustomerPhone(e.target.value)}
-                      className="h-8 text-xs"
-                    />
+                  <div className="flex gap-2">
+                    <div className="grid grid-cols-2 gap-2 flex-1">
+                      <Input 
+                        placeholder="Nome do Cliente (Opcional)" 
+                        value={customerName}
+                        onChange={e => setCustomerName(e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                      <Input 
+                        placeholder="Telefone (Opcional)" 
+                        value={customerPhone}
+                        onChange={e => setCustomerPhone(e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      className="h-8 shrink-0 px-3 bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 border-blue-200"
+                      onClick={() => setCustomerSearchModalOpen(true)}
+                    >
+                      <Search className="h-4 w-4 mr-1" />
+                      Buscar
+                    </Button>
                   </div>
                   <div className="grid grid-cols-3 gap-1">
                     <button 
@@ -1044,30 +1273,40 @@ export default function PDV() {
                     </button>
                   </div>
                   {deliveryType === "entrega" && (
-                    <Input 
-                      placeholder="Endereço de Entrega Completo" 
-                      value={deliveryAddress}
-                      onChange={e => setDeliveryAddress(e.target.value)}
-                      className="h-8 text-xs"
-                      required={deliveryType === "entrega"}
-                    />
+                    <>
+                      <Input 
+                        placeholder="Endereço de Entrega Completo" 
+                        value={deliveryAddress}
+                        onChange={e => setDeliveryAddress(e.target.value)}
+                        className="h-8 text-xs"
+                        required={deliveryType === "entrega"}
+                      />
+                      <Input 
+                        placeholder="Observações de entrega (opcional)" 
+                        value={deliveryNotes}
+                        onChange={e => setDeliveryNotes(e.target.value)}
+                        className="h-8 text-xs mt-1"
+                      />
+                    </>
                   )}
                 </div>
 
-                {/* NFC-e Toggle Removido para evitar clique acidental */}
-
-                {/* Finalize */}
                 <Button
-                  size="lg"
-                  className="w-full h-12 text-base"
-                  onClick={() => saleMutation.mutate()}
-                  disabled={saleMutation.isPending || cart.length === 0}
+                  className="w-full h-14 text-lg font-bold bg-emerald-600 hover:bg-emerald-700 mt-2"
+                  onClick={() => saleMutation.mutate({})}
+                  disabled={cart.length === 0 || saleMutation.isPending}
                 >
-                  {saleMutation.isPending
-                    ? "Finalizando..."
-                    : `Finalizar Venda \u2014 ${formatCurrency(total)}`
-                  }
+                  Finalizar Venda
                 </Button>
+                {selectedTable && (
+                  <Button
+                    className="w-full h-14 text-lg font-bold bg-amber-500 hover:bg-amber-600 mt-2 text-white"
+                    onClick={() => saleMutation.mutate({ pendingOnly: true })}
+                    disabled={cart.length === 0 || saleMutation.isPending}
+                  >
+                    Salvar Pedido (Pendente)
+                  </Button>
+                )}
               </>
             )}
           </CardContent>
@@ -1080,6 +1319,69 @@ export default function PDV() {
         open={cupomOpen}
         onClose={() => setCupomOpen(false)}
       />
+
+      <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Editar Itens da Venda</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto pr-2">
+            {cart.length === 0 ? (
+              <p className="text-muted-foreground text-center py-4">Nenhum item na venda.</p>
+            ) : (
+              cart.map((item) => (
+                <div key={item.cartItemId} className="flex flex-col gap-3 p-4 bg-muted/30 rounded-lg border">
+                  {/* Linha superior: Nome do Produto e Botão Apagar */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-base">{item.product.name}</p>
+                      {item.selectedAdditionals && item.selectedAdditionals.length > 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          + {item.selectedAdditionals.map(a => a.name).join(", ")}
+                        </p>
+                      )}
+                    </div>
+                    <Button variant="ghost" size="icon" className="text-destructive h-8 w-8 hover:bg-destructive/10 shrink-0 -mt-1 -mr-1" onClick={() => removeFromCart(item.cartItemId)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  
+                  {/* Linha inferior: Preço, Quantidade e Total */}
+                  <div className="flex items-end justify-between gap-2 pt-2 border-t border-border/50">
+                    <div className="flex flex-col gap-1.5 w-28">
+                      <Label className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Preço Un. (R$)</Label>
+                      <Input 
+                        type="number" 
+                        className="h-9 font-medium" 
+                        value={item.unitPrice === 0 ? '' : item.unitPrice}
+                        onChange={(e) => updateItemPrice(item.cartItemId, parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                    
+                    <div className="flex flex-col gap-1.5 items-center">
+                      <Label className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Qtd.</Label>
+                      <div className="flex items-center gap-1 bg-background rounded-md border h-9 px-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-sm hover:bg-muted" onClick={() => updateQty(item.cartItemId, -1)}>
+                          <Minus className="h-3 w-3" />
+                        </Button>
+                        <span className="w-10 text-center text-sm font-semibold">{fmtQty(item.quantity)}</span>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-sm hover:bg-muted" onClick={() => updateQty(item.cartItemId, 1)}>
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 items-end min-w-[80px]">
+                      <Label className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Total (R$)</Label>
+                      <span className="text-lg font-bold text-emerald-600 leading-9">{formatCurrency(item.unitPrice * item.quantity)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Product Options Modal */}
       <Dialog open={productModalOpen} onOpenChange={setProductModalOpen}>
@@ -1218,6 +1520,31 @@ export default function PDV() {
           )}
         </DialogContent>
       </Dialog>
+      {customerSearchModalOpen && (
+        <CustomerSearchModal
+          isOpen={customerSearchModalOpen}
+          onClose={() => setCustomerSearchModalOpen(false)}
+          storeId={store?.id || ""}
+          onSelectCustomer={(customer) => {
+            setCustomerName(customer.name || "");
+            setCustomerPhone(customer.phone || "");
+            setCustomerId(customer.id);
+            if (customer.address) {
+              setDeliveryAddress(customer.address);
+            }
+          }}
+          onNewCustomer={() => setCustomerFormModalOpen(true)}
+        />
+      )}
+
+      {customerFormModalOpen && (
+        <ClienteFormModal
+          isOpen={customerFormModalOpen}
+          onClose={() => setCustomerFormModalOpen(false)}
+          storeId={store?.id || ""}
+          customer={null}
+        />
+      )}
     </>
   );
 }

@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import ProtectedRoute from "./components/ProtectedRoute";
 import DashboardLayout from "./components/DashboardLayout";
@@ -36,8 +36,11 @@ const queryClient = new QueryClient({
       gcTime: 10 * 60 * 1000,
       // Não recarrega ao focar a janela (evita requisições desnecessárias)
       refetchOnWindowFocus: false,
-      // Tenta 1 vez em caso de erro (padrão é 3)
-      retry: 1,
+      // Tenta 1 vez em caso de erro (padrão é 3), mas não tenta se for erro de rede (Failed to fetch)
+      retry: (failureCount, error) => {
+        if (error.message === 'Failed to fetch' || error.message?.includes('fetch')) return false;
+        return failureCount < 1;
+      },
     },
   },
 });
@@ -56,7 +59,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      <HashRouter>
         <Suspense fallback={<PageLoader />}>
           <Routes>
             {/* ── Públicas ─────────────────────────────────────────── */}
@@ -78,7 +81,8 @@ const App = () => (
               }
             >
               <Route index          element={<Dashboard />} />
-              <Route path="pdv"      element={<PDV />} />
+              <Route path="pdv"      element={<PDV key="pdv" />} />
+              <Route path="delivery" element={<PDV key="delivery" isDeliveryMode={true} />} />
               <Route path="products" element={<Products />} />
               <Route path="stock"    element={<Stock />} />
               <Route path="reports"  element={<Reports />} />
@@ -90,7 +94,7 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
-      </BrowserRouter>
+      </HashRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );

@@ -1,9 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabase";
-import { Sidebar } from "@/components/Sidebar";
-import { Header } from "@/components/Header";
-import { useAuth } from "@/components/AuthProvider";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Loader2, Plus, Search, User, FileText, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,12 +67,9 @@ export default function Clientes() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+    <>
+      <div className="flex-1 flex flex-col h-full">
+        <main className="flex-1 overflow-y-auto">
           <div className="max-w-6xl mx-auto space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
@@ -174,7 +169,7 @@ export default function Clientes() {
             </div>
           </div>
         </main>
-      </div>
+    </div>
 
       <ClienteFormModal 
         isOpen={isFormOpen} 
@@ -189,6 +184,6 @@ export default function Clientes() {
         customer={historyCustomer}
         storeId={store?.id}
       />
-    </div>
+    </>
   );
 }
