@@ -42,6 +42,11 @@ interface IfoodConfig {
   client_secret?: string;
 }
 
+interface AsaasConfig {
+  api_key?: string;
+  wallet_id?: string;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function maskCnpj(v: string) {
   return v
@@ -57,11 +62,12 @@ function maskCnpj(v: string) {
 export default function SettingsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "assinatura" | "ifood" | "impressora" | "pdv" | "mesas">("links");
+  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "assinatura" | "ifood" | "asaas" | "impressora" | "pdv" | "mesas">("links");
   const [sefazServico, setSefazServico] = useState<SefazServico>("NFeAutorizacao");
   const [showToken, setShowToken] = useState(false);
   const [nfe, setNfe] = useState<NfeConfig>({});
   const [ifood, setIfood] = useState<IfoodConfig>({});
+  const [asaas, setAsaas] = useState<AsaasConfig>({});
   const [nfeLoaded, setNfeLoaded] = useState(false);
   const [mesasConfig, setMesasConfig] = useState({ table_count: 0, has_counters: false, counter_count: 0, table_fee: 0 });
 
@@ -215,7 +221,7 @@ export default function SettingsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("store_secrets")
-        .select("id, nfe_config, ifood_config")
+        .select("id, nfe_config, ifood_config, asaas_config")
         .eq("store_id", profile!.store_id!)
         .maybeSingle();
       if (error) throw error;
@@ -228,6 +234,7 @@ export default function SettingsPage() {
     if (!nfeLoaded && secrets) {
       if (secrets.nfe_config) setNfe(secrets.nfe_config as NfeConfig);
       if (secrets.ifood_config) setIfood(secrets.ifood_config as IfoodConfig);
+      if (secrets.asaas_config) setAsaas(secrets.asaas_config as AsaasConfig);
       setNfeLoaded(true);
     }
   }, [secrets, nfeLoaded]);
@@ -250,7 +257,8 @@ export default function SettingsPage() {
           .from("store_secrets")
           .update({ 
             nfe_config: cleanedNfe,
-            ifood_config: ifood
+            ifood_config: ifood,
+            asaas_config: asaas
           })
           .eq("id", secrets.id);
         if (error) throw error;
@@ -261,7 +269,8 @@ export default function SettingsPage() {
           .insert({ 
             store_id: store.id, 
             nfe_config: cleanedNfe,
-            ifood_config: ifood
+            ifood_config: ifood,
+            asaas_config: asaas
           });
         if (error) throw error;
       }
@@ -378,6 +387,7 @@ export default function SettingsPage() {
           { id: "links",       label: "Links",       icon: Link2 },
           { id: "integracoes", label: "Integrações", icon: Radio },
           { id: "ifood",       label: "iFood",       icon: Store },
+          { id: "asaas",       label: "Asaas NF",    icon: Receipt },
           { id: "assinatura",  label: "Assinatura",  icon: Star },
           { id: "impressora",  label: "Impressora",  icon: Printer },
           { id: "pdv",         label: "PDV",         icon: ShoppingCart },
@@ -600,6 +610,66 @@ export default function SettingsPage() {
                 <li>Use o endereço de teste: <strong>Ramal Bujari, 100 - Bujari</strong>.</li>
                 <li>Os pedidos aparecerão automaticamente na sua aba <strong>Pedidos</strong>.</li>
               </ul>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── ABA: ASAAS ────────────────────────────────────────────────────────── */}
+      {activeTab === "asaas" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Receipt className="h-5 w-5 text-blue-600" />
+              Configuração Asaas (Notas Fiscais)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 text-sm text-blue-800">
+              <p className="font-semibold flex items-center gap-1.5">Emitir Notas Fiscais via Asaas</p>
+              <p className="text-xs mt-1 leading-relaxed">
+                Cole aqui a chave de API (API Key) gerada na sua conta do Asaas. 
+                Essa chave será utilizada para gerar suas notas fiscais automaticamente ou manualmente pelo PDV.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label>API Key (Chave de API do Asaas)</Label>
+                <div className="relative">
+                  <Input 
+                    type={showToken ? "text" : "password"}
+                    placeholder="$aact_..."
+                    value={asaas.api_key ?? ""}
+                    onChange={e => setAsaas({ ...asaas, api_key: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowToken(!showToken)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Wallet ID (Opcional - se usar subcontas)</Label>
+                <Input 
+                  placeholder="Ex: e00fc..."
+                  value={asaas.wallet_id ?? ""}
+                  onChange={e => setAsaas({ ...asaas, wallet_id: e.target.value })}
+                />
+              </div>
+
+              <Button 
+                className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending}
+              >
+                <Save className="h-4 w-4" />
+                {saveMutation.isPending ? "Salvando..." : "Salvar Configuração Asaas"}
+              </Button>
             </div>
           </CardContent>
         </Card>

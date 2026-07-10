@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,17 +12,47 @@ serve(async (req) => {
   }
 
   try {
-    const { action, payload } = await req.json();
-    
-    // Obtém a chave da API do Asaas configurada no Supabase (Secrets)
-    const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY');
-    
-    // Como a API fornecida inicia com $aact_prod_, usaremos a URL de produção
-    const ASAAS_URL = 'https://api.asaas.com/v3';
+    const { action, payload, storeId } = await req.json();
 
-    if (!ASAAS_API_KEY) {
-      throw new Error('ASAAS_API_KEY não configurada no servidor.');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Identificar a loja
+    let targetStoreId = storeId;
+
+    if (!targetStoreId) {
+      // Tentar pegar do header de auth
+      const authHeader = req.headers.get('Authorization');
+      if (authHeader) {
+        const supabaseAuth = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') || '', {
+          global: { headers: { Authorization: authHeader } }
+        });
+        const { data: { user } } = await supabaseAuth.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabaseAuth.from('profiles').select('store_id').eq('id', user.id).single();
+          targetStoreId = profile?.store_id;
+        }
+      }
     }
+
+    if (!targetStoreId) {
+      throw new Error('Loja não identificada. Envie storeId ou Authorization header.');
+    }
+
+    // Buscar a API Key da loja
+    const { data: secret, error: secretError } = await supabase
+      .from('store_secrets')
+      .select('asaas_config')
+      .eq('store_id', targetStoreId)
+      .single();
+
+    if (secretError || !secret?.asaas_config?.api_key) {
+      throw new Error('Chave da API do Asaas não configurada para esta loja.');
+    }
+
+    const ASAAS_API_KEY = secret.asaas_config.api_key;
+    const ASAAS_URL = 'https://api.asaas.com/v3';
 
     if (action === 'test_connection') {
       const checkRes = await fetch(`${ASAAS_URL}/customers?limit=1`, {
@@ -40,7 +71,7 @@ serve(async (req) => {
         });
       }
       
-      return new Response(JSON.stringify({ success: true, message: 'Conexão com Asaas realizada com sucesso!', env: ASAAS_URL }), {
+      return new Response(JSON.stringify({ success: true, message: 'Conexão com Asaas realizada com sucesso!' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       });
@@ -50,7 +81,6 @@ serve(async (req) => {
       const { customerName, customerCpfCnpj, value, serviceDescription } = payload;
       
       // 1. Verificar se o cliente já existe ou criá-lo
-      // Para simplificar, vamos criar um cliente avulso no Asaas
       const createCustomerRes = await fetch(`${ASAAS_URL}/customers`, {
         method: 'POST',
         headers: {
