@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import {
   LayoutDashboard, ShoppingCart, Package, TrendingUp,
   BarChart3, Settings, LogOut, Menu, X, ShoppingBag, FileText, Users,
-  Lock, ShieldAlert,
+  Lock, ShieldAlert, Download, Sparkles, RefreshCw, CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -20,6 +20,42 @@ export default function DashboardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // ── Atualizações Automáticas (OTA) ─────────────────────────────────────────
+  const [updateInfo, setUpdateInfo] = useState<{
+    status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error' | 'not-available';
+    version?: string;
+    percent?: number;
+    error?: string;
+  }>({ status: 'idle' });
+
+  useEffect(() => {
+    // Escuta eventos vindos do Electron (se estiver rodando no app instalado)
+    if (window.electronAPI?.onUpdateStatus) {
+      const unsubscribe = window.electronAPI.onUpdateStatus((data: any) => {
+        setUpdateInfo(data);
+        if (data.status === 'available') {
+          toast.info(`Nova versão ${data.version} disponível! Clique para atualizar.`);
+        } else if (data.status === 'downloaded') {
+          toast.success(`Versão ${data.version} pronta! O sistema reiniciará para aplicar.`);
+        }
+      });
+      return () => unsubscribe();
+    }
+  }, []);
+
+  const handleStartDownload = async () => {
+    if (window.electronAPI?.downloadUpdate) {
+      toast.loading("Iniciando download da atualização...");
+      await window.electronAPI.downloadUpdate();
+    }
+  };
+
+  const handleApplyUpdate = () => {
+    if (window.electronAPI?.quitAndInstall) {
+      window.electronAPI.quitAndInstall();
+    }
+  };
 
   // ── Controle de Senha Mestre / Permissões de Acesso ───────────────────────
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
@@ -256,6 +292,35 @@ export default function DashboardLayout() {
           <button className="lg:hidden" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-6 w-6" />
           </button>
+          
+          {/* Alerta de Atualização na Barra Superior */}
+          {updateInfo.status === 'available' && (
+            <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-500/30 px-3 py-1.5 rounded-lg text-xs text-blue-600 animate-pulse font-medium">
+              <Sparkles className="h-4 w-4 text-blue-500" />
+              <span>Nova versão <strong>{updateInfo.version}</strong> disponível!</span>
+              <Button size="sm" onClick={handleStartDownload} className="h-7 text-xs px-2.5 bg-blue-600 hover:bg-blue-700 text-white gap-1 ml-2">
+                <Download className="h-3 w-3" /> Atualizar Agora
+              </Button>
+            </div>
+          )}
+
+          {updateInfo.status === 'downloading' && (
+            <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-lg text-xs text-amber-600 font-medium">
+              <RefreshCw className="h-4 w-4 text-amber-500 animate-spin" />
+              <span>Baixando atualização... {updateInfo.percent ?? 0}%</span>
+            </div>
+          )}
+
+          {updateInfo.status === 'downloaded' && (
+            <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-xs text-emerald-700 font-medium">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <span>Versão <strong>{updateInfo.version}</strong> pronta!</span>
+              <Button size="sm" onClick={handleApplyUpdate} className="h-7 text-xs px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white gap-1 ml-2">
+                Reiniciar e Instalar
+              </Button>
+            </div>
+          )}
+
           <div className="flex-1" />
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <SyncIndicator />
