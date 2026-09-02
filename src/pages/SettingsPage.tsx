@@ -15,7 +15,7 @@ import {
   UtensilsCrossed, AlertCircle, RefreshCw, Eye, EyeOff,
   FileText, Save, ExternalLink as ExtLink, Shield, Radio, Printer,
   CheckCircle2, Star, Clock, ShoppingBag, Receipt, Percent, LayoutGrid,
-  Lock, KeyRound, ShieldCheck,
+  Lock, KeyRound, ShieldCheck, Users2, DollarSign, Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -63,7 +63,7 @@ function maskCnpj(v: string) {
 export default function SettingsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "assinatura" | "ifood" | "asaas" | "impressora" | "pdv" | "mesas" | "seguranca">("links");
+  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "assinatura" | "ifood" | "asaas" | "impressora" | "pdv" | "vendedoras" | "mesas" | "seguranca">("links");
   const [sefazServico, setSefazServico] = useState<SefazServico>("NFeAutorizacao");
   const [showToken, setShowToken] = useState(false);
   const [nfe, setNfe] = useState<NfeConfig>({});
@@ -448,7 +448,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Grade de Ícones (Tabs) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-10 gap-3">
         {([
           { id: "links",       label: "Links",       icon: Link2 },
           { id: "integracoes", label: "Integrações", icon: Radio },
@@ -457,6 +457,7 @@ export default function SettingsPage() {
           { id: "assinatura",  label: "Assinatura",  icon: Star },
           { id: "impressora",  label: "Impressora",  icon: Printer },
           { id: "pdv",         label: "PDV",         icon: ShoppingCart },
+          { id: "vendedoras",  label: "Vendedoras",  icon: Users2 },
           { id: "mesas",       label: "Mesas",       icon: LayoutGrid },
           { id: "seguranca",   label: "Permissões",  icon: ShieldCheck },
         ] as const).map((tab) => {
@@ -1196,7 +1197,280 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {/* 🔴 ABA: MESAS 🔴 */}
+      {/* ── ABA: VENDEDORAS & RELATÓRIO DE COMISSÕES ────────────────────── */}
+      {activeTab === "vendedoras" && (
+        <div className="space-y-6">
+          {/* Card: Cadastro e Lista de Vendedoras */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Users2 className="h-5 w-5 text-blue-600" />
+                Cadastro de Vendedoras & Porcentagem
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Cadastre as pessoas da sua equipe de vendas e defina a comissão padrão (%) de cada uma.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Formulário de cadastro */}
+              <div className="flex flex-col sm:flex-row gap-3 items-end p-4 border rounded-xl bg-slate-50">
+                <div className="flex-1 w-full space-y-1">
+                  <Label className="text-xs font-semibold">Nome da Vendedora / Atendente</Label>
+                  <Input
+                    placeholder="Ex: Amanda Santos"
+                    value={newSellerName}
+                    onChange={e => setNewSellerName(e.target.value)}
+                    className="h-9 bg-white"
+                  />
+                </div>
+                <div className="w-full sm:w-32 space-y-1">
+                  <Label className="text-xs font-semibold">Comissão (%)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={newSellerCommission}
+                    onChange={e => setNewSellerCommission(Number(e.target.value))}
+                    className="h-9 bg-white font-bold"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  className="h-9 w-full sm:w-auto shrink-0 bg-blue-600 hover:bg-blue-700 text-white gap-1 font-semibold"
+                  disabled={!newSellerName.trim()}
+                  onClick={() => {
+                    if (!newSellerName.trim()) return;
+                    saveSellers([...sellers, { name: newSellerName.trim(), commission: newSellerCommission }]);
+                    setNewSellerName("");
+                    setNewSellerCommission(10);
+                  }}
+                >
+                  + Cadastrar Vendedora
+                </Button>
+              </div>
+
+              {/* Lista de vendedoras ativas */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Equipe Cadastrada ({sellers.length})
+                </h4>
+                {sellers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-3 italic">Nenhuma vendedora cadastrada no momento.</p>
+                ) : (
+                  <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {sellers.map((s, i) => (
+                      <div key={i} className="flex items-center justify-between p-3.5 border rounded-xl bg-card shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
+                            {s.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-sm">{s.name}</p>
+                            <Badge variant="secondary" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">
+                              {s.commission}% de comissão
+                            </Badge>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            if (window.confirm(`Deseja remover ${s.name}?`)) {
+                              saveSellers(sellers.filter((_, idx) => idx !== i));
+                            }
+                          }}
+                          className="h-8 w-8 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Card: Relatório Financeiro de Comissões a Pagar */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <DollarSign className="h-5 w-5 text-emerald-600" />
+                  Relatório de Vendas & Comissões a Pagar
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Acompanhe quanto cada vendedora vendeu e o valor exato que a loja deve repassar a ela.
+                </p>
+              </div>
+
+              {(() => {
+                const commissions = JSON.parse(localStorage.getItem("pdv_commissions") || "[]");
+                if (commissions.length === 0) return null;
+                return (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200"
+                    onClick={() => {
+                      if (window.confirm("Deseja zerar o histórico de comissões pagas? Essa ação limpará as comissões acumuladas até hoje.")) {
+                        localStorage.removeItem("pdv_commissions");
+                        toast.success("Histórico de comissões resetado com sucesso!");
+                        setActiveTab("links");
+                        setTimeout(() => setActiveTab("vendedoras"), 50);
+                      }
+                    }}
+                  >
+                    Zerar / Marcar como Pagas
+                  </Button>
+                );
+              })()}
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const commissions: Array<{
+                  saleId: string;
+                  sellerName: string;
+                  commission: number;
+                  total: number;
+                  commissionValue: number;
+                  date: string;
+                }> = JSON.parse(localStorage.getItem("pdv_commissions") || "[]");
+
+                // Agrupa por vendedora
+                const summary: Record<string, { totalVendido: number; comissaoTotal: number; qtdVendas: number; pct: number }> = {};
+
+                // Inicializa todas as cadastradas com 0
+                sellers.forEach(s => {
+                  summary[s.name] = { totalVendido: 0, comissaoTotal: 0, qtdVendas: 0, pct: s.commission };
+                });
+
+                // Soma as vendas
+                commissions.forEach(c => {
+                  if (!summary[c.sellerName]) {
+                    summary[c.sellerName] = { totalVendido: 0, comissaoTotal: 0, qtdVendas: 0, pct: c.commission };
+                  }
+                  summary[c.sellerName].totalVendido += Number(c.total) || 0;
+                  summary[c.sellerName].comissaoTotal += Number(c.commissionValue) || 0;
+                  summary[c.sellerName].qtdVendas += 1;
+                });
+
+                const totalGeralVendido = Object.values(summary).reduce((acc, v) => acc + v.totalVendido, 0);
+                const totalGeralComissao = Object.values(summary).reduce((acc, v) => acc + v.comissaoTotal, 0);
+                const totalGeralQtd = Object.values(summary).reduce((acc, v) => acc + v.qtdVendas, 0);
+
+                return (
+                  <div className="space-y-6">
+                    {/* Cards de Resumo Geral */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="p-4 rounded-xl bg-blue-50 border border-blue-100">
+                        <p className="text-[11px] font-semibold text-blue-700 uppercase tracking-wider">Total em Vendas pela Equipe</p>
+                        <p className="text-xl font-bold text-blue-900 mt-1">R$ {totalGeralVendido.toFixed(2)}</p>
+                        <p className="text-xs text-blue-600 mt-0.5">{totalGeralQtd} transações realizadas</p>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-100">
+                        <p className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">Total de Comissões a Pagar</p>
+                        <p className="text-xl font-bold text-emerald-900 mt-1">R$ {totalGeralComissao.toFixed(2)}</p>
+                        <p className="text-xs text-emerald-600 mt-0.5">Valor a ser repassado às vendedoras</p>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-purple-50 border border-purple-100">
+                        <p className="text-[11px] font-semibold text-purple-700 uppercase tracking-wider">Vendedoras com Vendas</p>
+                        <p className="text-xl font-bold text-purple-900 mt-1">{Object.keys(summary).length}</p>
+                        <p className="text-xs text-purple-600 mt-0.5">Integrantes da equipe ativa</p>
+                      </div>
+                    </div>
+
+                    {/* Tabela de Fechamento por Vendedora */}
+                    <div className="overflow-x-auto border rounded-xl">
+                      <table className="w-full text-sm text-left">
+                        <thead className="bg-muted/50 text-xs uppercase text-muted-foreground border-b font-semibold">
+                          <tr>
+                            <th className="p-3">Vendedora</th>
+                            <th className="p-3 text-center">Taxa de Comissão</th>
+                            <th className="p-3 text-center">Qtd Vendas</th>
+                            <th className="p-3 text-right">Total Vendido (R$)</th>
+                            <th className="p-3 text-right text-emerald-600 font-bold">Valor a Pagar (R$)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {Object.keys(summary).length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="p-4 text-center text-muted-foreground text-xs">
+                                Nenhuma venda vinculada a vendedora até o momento.
+                              </td>
+                            </tr>
+                          ) : (
+                            Object.entries(summary).map(([name, data]) => (
+                              <tr key={name} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-3 font-semibold flex items-center gap-2">
+                                  <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[10px]">
+                                    {name.charAt(0).toUpperCase()}
+                                  </div>
+                                  {name}
+                                </td>
+                                <td className="p-3 text-center">
+                                  <Badge variant="outline" className="text-xs">
+                                    {data.pct}%
+                                  </Badge>
+                                </td>
+                                <td className="p-3 text-center font-mono font-medium">{data.qtdVendas}</td>
+                                <td className="p-3 text-right font-medium">R$ {data.totalVendido.toFixed(2)}</td>
+                                <td className="p-3 text-right font-bold text-emerald-600 text-base">
+                                  R$ {data.comissaoTotal.toFixed(2)}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                        {Object.keys(summary).length > 0 && (
+                          <tfoot className="bg-slate-50 border-t font-bold">
+                            <tr>
+                              <td colSpan={2} className="p-3">TOTAL GERAL</td>
+                              <td className="p-3 text-center font-mono">{totalGeralQtd}</td>
+                              <td className="p-3 text-right">R$ {totalGeralVendido.toFixed(2)}</td>
+                              <td className="p-3 text-right text-emerald-700 text-base">R$ {totalGeralComissao.toFixed(2)}</td>
+                            </tr>
+                          </tfoot>
+                        )}
+                      </table>
+                    </div>
+
+                    {/* Detalhamento das Últimas Vendas */}
+                    {commissions.length > 0 && (
+                      <div className="space-y-3 pt-2">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                          Extrato das Últimas Vendas com Comissão
+                        </h4>
+                        <div className="max-h-60 overflow-y-auto divide-y border rounded-xl bg-card">
+                          {commissions.slice(-20).reverse().map((c, idx) => (
+                            <div key={idx} className="p-3 flex items-center justify-between text-xs hover:bg-slate-50">
+                              <div>
+                                <p className="font-semibold">{c.sellerName} · Venda #{c.saleId.slice(0, 8)}</p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  {new Date(c.date).toLocaleString("pt-BR")} · Total da Venda: R$ {Number(c.total).toFixed(2)} ({c.commission}%)
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <span className="font-bold text-emerald-600 text-sm">
+                                  + R$ {Number(c.commissionValue).toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+        </div>
+      )}
       {activeTab === "mesas" && (
         <Card>
           <CardHeader>
