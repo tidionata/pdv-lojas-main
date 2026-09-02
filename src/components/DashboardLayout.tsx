@@ -152,6 +152,8 @@ export default function DashboardLayout() {
   });
 
   const isTabRestricted = (tabKey: string) => {
+    // Só bloqueia abas se o lojista tiver realmente criado uma senha master
+    if (!savedAdminPassword) return false;
     if (tabKey === "settings") return true;
     const lockConfig = localStorage.getItem(`lock_tab_${tabKey}`);
     return lockConfig === "true";
