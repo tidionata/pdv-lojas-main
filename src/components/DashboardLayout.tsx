@@ -33,6 +33,7 @@ export default function DashboardLayout() {
     // Escuta eventos vindos do Electron (se estiver rodando no app instalado)
     if (window.electronAPI?.onUpdateStatus) {
       const unsubscribe = window.electronAPI.onUpdateStatus((data: any) => {
+        console.log("Update status received:", data);
         setUpdateInfo(data);
         if (data.status === 'available') {
           toast.info(`Nova versão ${data.version} disponível! Clique para atualizar.`);
@@ -40,6 +41,10 @@ export default function DashboardLayout() {
           toast.success(`Versão ${data.version} pronta! O sistema reiniciará para aplicar.`);
         }
       });
+
+      // Força verificação imediata ao montar
+      window.electronAPI.checkForUpdates?.();
+
       return () => unsubscribe();
     }
   }, []);
@@ -213,6 +218,7 @@ export default function DashboardLayout() {
         <div className="flex items-center justify-between h-16 px-6 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
             <span className="text-lg font-bold text-sidebar-primary font-['Space_Grotesk']">PDVTOTAL</span>
+            <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-sidebar-accent text-sidebar-primary border border-sidebar-border">v1.3.1</span>
           </div>
           <button className="lg:hidden text-sidebar-foreground" onClick={() => setSidebarOpen(false)}>
             <X className="h-5 w-5" />
