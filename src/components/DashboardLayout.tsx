@@ -313,9 +313,20 @@ export default function DashboardLayout() {
           )}
 
           {updateInfo.status === 'downloading' && (
-            <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-lg text-xs text-amber-600 font-medium">
-              <RefreshCw className="h-4 w-4 text-amber-500 animate-spin" />
-              <span>Baixando atualização... {updateInfo.percent ?? 0}%</span>
+            <div className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/30 px-3.5 py-1.5 rounded-lg text-xs text-amber-700 font-medium">
+              <RefreshCw className="h-4 w-4 text-amber-600 animate-spin shrink-0" />
+              <div className="flex flex-col gap-1 min-w-[140px]">
+                <div className="flex justify-between items-center text-[11px]">
+                  <span>Baixando atualização...</span>
+                  <span className="font-bold font-mono">{updateInfo.percent ?? 0}%</span>
+                </div>
+                <div className="w-full bg-amber-200/50 rounded-full h-1.5 overflow-hidden">
+                  <div 
+                    className="bg-amber-600 h-1.5 rounded-full transition-all duration-300" 
+                    style={{ width: `${updateInfo.percent ?? 0}%` }}
+                  />
+                </div>
+              </div>
             </div>
           )}
 
