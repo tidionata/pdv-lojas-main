@@ -1,7 +1,7 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.3.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -19,12 +19,11 @@
     "appId": "com.pdvtotal.app",
     "productName": "PDV Total",
     "directories": {
-      "output": "dist-electron"
+      "output": "C:/Users/Beatriz/Downloads/pdv-installer"
     },
     "files": [
       "dist/**/*",
-      "electron/**/*",
-      "node_modules/**/*"
+      "electron/**/*"
     ],
     "win": {
       "target": [
