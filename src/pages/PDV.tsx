@@ -60,6 +60,8 @@ interface SaleTicket {
   nfceKey?: string;
   nfceUrl?: string;
   trackingUrl?: string;
+  sellerName?: string;
+  sellerCommission?: number;
 }
 
 const fmt = (v: number) =>
@@ -241,6 +243,7 @@ function CupomModal({
   onClose: () => void;
 }) {
   const printRef = useRef<HTMLDivElement>(null);
+  const [emittingNfe, setEmittingNfe] = useState(false);
 
   useEffect(() => {
     if (open && localStorage.getItem("pdv_autoprint") === "true") {
@@ -249,6 +252,47 @@ function CupomModal({
       return () => clearTimeout(timer);
     }
   }, [open]);
+
+  const handleEmitNFe = async () => {
+    if (!ticket) return;
+    try {
+      setEmittingNfe(true);
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id;
+      if (!userId) throw new Error("Usuário não autenticado");
+
+      const { data: userData } = await supabase.from('profiles').select('store_id').eq('id', userId).single();
+      const storeId = userData?.store_id;
+
+      if (!storeId) throw new Error("Loja não encontrada");
+
+      const itemsDesc = ticket.items.map(i => `${i.quantity}x ${i.product.name}`).join(", ");
+
+      const nfePayload = {
+        action: 'create_invoice',
+        storeId: storeId,
+        payload: {
+          customerName: ticket.customerName || 'Consumidor Final',
+          customerCpfCnpj: '', 
+          value: ticket.total,
+          serviceDescription: `Venda PDV - Itens: ${itemsDesc}`
+        }
+      };
+
+      const { data, error } = await supabase.functions.invoke('asaas-api', {
+        body: nfePayload
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      
+      toast.success("NF-e emitida com sucesso no Asaas!");
+    } catch (err: any) {
+      toast.error("Erro ao emitir NF-e: " + err.message);
+    } finally {
+      setEmittingNfe(false);
+    }
+  };
 
   const handlePrint = async () => {
     const content = printRef.current;
@@ -410,12 +454,15 @@ function CupomModal({
         </div>
 
         {/* Ações */}
-        <div className="flex gap-2 pt-1">
-          <Button onClick={handlePrint} className="flex-1 gap-2 bg-gray-900 hover:bg-gray-700">
+        <div className="flex gap-2 pt-1 flex-wrap">
+          <Button onClick={handleEmitNFe} disabled={emittingNfe} className="flex-1 min-w-[120px] gap-2 bg-blue-600 hover:bg-blue-700 text-white">
+            {emittingNfe ? "Gerando NF-e..." : "Emitir NF-e (Asaas)"}
+          </Button>
+          <Button onClick={handlePrint} className="flex-1 min-w-[120px] gap-2 bg-gray-900 hover:bg-gray-700">
             <Printer className="h-4 w-4" />
             Imprimir Cupom
           </Button>
-          <Button onClick={onClose} variant="outline" className="flex-1">
+          <Button onClick={onClose} variant="outline" className="flex-1 min-w-[120px]">
             Nova Venda
           </Button>
         </div>
@@ -441,6 +488,12 @@ export default function PDV({ isDeliveryMode = false }: { isDeliveryMode?: boole
   const [saleCounter, setSaleCounter] = useState(1);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [pendingSaleId, setPendingSaleId] = useState<string | null>(null);
+
+  // ── Vendedoras ───────────────────────────────────────────────────────────────
+  const sellers: { name: string; commission: number }[] = JSON.parse(
+    localStorage.getItem("pdv_sellers") || "[]"
+  );
+  const [selectedSeller, setSelectedSeller] = useState<{ name: string; commission: number } | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   
   const [customerName, setCustomerName] = useState("");
@@ -468,12 +521,11 @@ export default function PDV({ isDeliveryMode = false }: { isDeliveryMode?: boole
         const { items, customerName, customerPhone, customerId } = JSON.parse(duplicateData);
         if (items && items.length > 0) {
           setCart(items.map((i: any) => ({
-            id: i.product.id,
-            name: i.product.name,
-            price: i.unit_price,
-            quantity: i.quantity,
-            type: i.product.type,
-            additionals: [] // Ignoring additionals for now or we could load them if saved
+            cartItemId: `dup-${Date.now()}-${Math.random()}`,
+            product: i.product || { id: i.id || "manual", name: i.name, price: i.unit_price || i.price, active: true },
+            unitPrice: i.unit_price || i.price || i.product?.price || 0,
+            quantity: i.quantity || 1,
+            selectedAdditionals: [],
           })));
         }
         if (customerName) setCustomerName(customerName);
@@ -904,7 +956,25 @@ export default function PDV({ isDeliveryMode = false }: { isDeliveryMode?: boole
         deliveryNotes,
         createdAt: new Date(),
         trackingUrl: data?.trackingUrl,
+        sellerName: selectedSeller?.name,
+        sellerCommission: selectedSeller?.commission,
       };
+
+      // Salva registro de comissão no localStorage para relatório
+      if (selectedSeller && data?.id) {
+        const commissionsKey = "pdv_commissions";
+        const existing = JSON.parse(localStorage.getItem(commissionsKey) || "[]");
+        existing.push({
+          saleId: data.id,
+          sellerName: selectedSeller.name,
+          commission: selectedSeller.commission,
+          total,
+          commissionValue: (total * selectedSeller.commission) / 100,
+          date: new Date().toISOString(),
+        });
+        localStorage.setItem(commissionsKey, JSON.stringify(existing));
+      }
+      setSelectedSeller(null);
       setLastTicket(newTicket);
       setCupomOpen(true);
       
@@ -1014,6 +1084,12 @@ export default function PDV({ isDeliveryMode = false }: { isDeliveryMode?: boole
             </div>
           </div>
         )}
+
+        <CupomModal
+          ticket={lastTicket}
+          open={cupomOpen}
+          onClose={() => setCupomOpen(false)}
+        />
       </div>
     );
   }
@@ -1290,6 +1366,33 @@ export default function PDV({ isDeliveryMode = false }: { isDeliveryMode?: boole
                     </>
                   )}
                 </div>
+
+                {/* Seletor de Vendedora */}
+                {sellers.length > 0 && (
+                  <div className="mt-2">
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Vendedora</label>
+                    <select
+                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                      value={selectedSeller?.name ?? ""}
+                      onChange={(e) => {
+                        const found = sellers.find(s => s.name === e.target.value) || null;
+                        setSelectedSeller(found);
+                      }}
+                    >
+                      <option value="">— Sem vendedora —</option>
+                      {sellers.map((s) => (
+                        <option key={s.name} value={s.name}>
+                          {s.name} ({s.commission}%)
+                        </option>
+                      ))}
+                    </select>
+                    {selectedSeller && (
+                      <p className="text-xs text-emerald-600 mt-1">
+                        Comissão: R$ {((total * selectedSeller.commission) / 100).toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <Button
                   className="w-full h-14 text-lg font-bold bg-emerald-600 hover:bg-emerald-700 mt-2"

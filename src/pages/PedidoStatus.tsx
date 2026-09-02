@@ -18,6 +18,7 @@ interface Order {
   status: string;
   payment_method: string;
   created_at: string;
+  notes?: string;
   delivery_type?: string;
   delivery_address?: string;
 }
@@ -249,6 +250,14 @@ export default function PedidoStatus() {
         <div className={`rounded-2xl p-5 ${statusInfo.bg}`}>
           <p className={`font-bold text-lg ${statusInfo.color}`}>{statusInfo.title}</p>
           <p className={`text-sm mt-1 ${statusInfo.color} opacity-80`}>{statusInfo.subtitle}</p>
+          {isCancelled && order.notes && order.notes.includes("[Motivo do cancelamento:") && (
+            <div className="mt-3 p-3 bg-red-100/80 border border-red-200 rounded-xl">
+              <p className="text-xs font-semibold text-red-800 uppercase tracking-wide">Motivo informado pela loja:</p>
+              <p className="text-sm font-medium text-red-950 mt-0.5">
+                {order.notes.split("[Motivo do cancelamento:")[1]?.replace("]", "").trim()}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Timeline */}

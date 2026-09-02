@@ -11,6 +11,7 @@ import {
   ShoppingCart, Search, Plus, Minus, Trash2, X,
   Store, ChevronRight, User, Phone, MessageSquare,
   Banknote, CreditCard, QrCode, UtensilsCrossed,
+  ShoppingBag,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -50,7 +51,39 @@ export default function Cardapio() {
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [deliveryType, setDeliveryType] = useState<"retirada" | "entrega">("retirada");
   const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [wantsChange, setWantsChange] = useState<boolean | null>(null);
+  const [changeFor, setChangeFor] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // ── Sessão do Cliente (Login / Cadastro) ──────────────────────────
+  const [loggedCustomer, setLoggedCustomer] = useState<{
+    name: string;
+    phone: string;
+    address?: string;
+    birthdate?: string;
+  } | null>(() => {
+    try {
+      const saved = localStorage.getItem(`customer_session_${storeId}`);
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [ordersModalOpen, setOrdersModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authName, setAuthName] = useState("");
+  const [authPhone, setAuthPhone] = useState("");
+  const [authAddress, setAuthAddress] = useState("");
+  const [authBirthdate, setAuthBirthdate] = useState("");
+
+  // Sincroniza formulário de checkout quando logado
+  useEffect(() => {
+    if (loggedCustomer) {
+      setCustomerName(loggedCustomer.name || "");
+      setCustomerPhone(loggedCustomer.phone || "");
+      if (loggedCustomer.address) setDeliveryAddress(loggedCustomer.address);
+    }
+  }, [loggedCustomer]);
 
   // Modal de Produto (Peso e Adicionais)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -188,8 +221,26 @@ export default function Cardapio() {
   const orderMutation = useMutation({
     mutationFn: async () => {
       if (!customerName.trim()) throw new Error("Informe seu nome");
+      if (!customerPhone.trim()) throw new Error("Informe seu WhatsApp para contato");
       if (deliveryType === "entrega" && !deliveryAddress.trim()) throw new Error("Informe o endereço de entrega");
+      if (paymentMethod === "cash") {
+        if (wantsChange === null) {
+          throw new Error("Por favor, selecione se precisa de troco (Sim ou Não).");
+        }
+        if (wantsChange === true && (!changeFor.trim() || Number(changeFor) <= 0)) {
+          throw new Error("Informe o valor para o troco.");
+        }
+      }
       if (cart.length === 0) throw new Error("Carrinho vazio");
+
+      let finalNotes = notes.trim();
+      if (paymentMethod === "cash") {
+        if (wantsChange === true && changeFor.trim()) {
+          finalNotes = finalNotes ? `${finalNotes} | [Precisa de troco para: R$ ${changeFor.trim()}]` : `[Precisa de troco para: R$ ${changeFor.trim()}]`;
+        } else if (wantsChange === false) {
+          finalNotes = finalNotes ? `${finalNotes} | [Não precisa de troco]` : `[Não precisa de troco]`;
+        }
+      }
 
       // Tenta Supabase
       try {
@@ -200,9 +251,10 @@ export default function Cardapio() {
             customer_name: customerName.trim(),
             customer_phone: customerPhone.trim() || null,
             total: cartTotal,
-            notes: notes.trim() || null,
+            notes: finalNotes || null,
             payment_method: paymentMethod,
             status: "pending",
+            origin: "menu",
             delivery_type: deliveryType,
             delivery_address: deliveryType === "entrega" ? deliveryAddress.trim() : null,
           })
@@ -220,7 +272,8 @@ export default function Cardapio() {
         }));
         await (supabase as any).from("order_items").insert(items);
         return order.id as string;
-      } catch {
+      } catch (err) {
+        console.warn("Erro ao salvar online no Supabase, salvando offline:", err);
         // fallback offline: salva em localStorage
         const orderId = `order-local-${Date.now()}`;
         const order = {
@@ -229,18 +282,21 @@ export default function Cardapio() {
           customer_name: customerName.trim(),
           customer_phone: customerPhone.trim() || null,
           total: cartTotal,
-          notes: notes.trim() || null,
+          notes: finalNotes || null,
           payment_method: paymentMethod,
           status: "pending",
+          origin: "menu",
           delivery_type: deliveryType,
           delivery_address: deliveryType === "entrega" ? deliveryAddress.trim() : null,
           created_at: new Date().toISOString(),
           items: cart.map(i => ({
+            id: `item-${Date.now()}-${Math.random()}`,
+            order_id: orderId,
             product_name: i.product.name,
             quantity: i.quantity,
             unit_price: i.unitPrice,
             subtotal: i.unitPrice * i.quantity,
-            additionals: i.additionals,
+            additionals: i.additionals || [],
           })),
         };
         const existing = JSON.parse(localStorage.getItem(`orders_offline_${storeId}`) || "[]");
@@ -291,16 +347,40 @@ export default function Cardapio() {
               onChange={e => setSearch(e.target.value)} className="pl-10 h-9" />
           </div>
 
-          <button onClick={() => setCartOpen(true)}
-            className="relative flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium text-sm hover:bg-primary/90 transition-colors">
-            <ShoppingCart className="h-4 w-4" />
-            <span className="hidden sm:inline">Carrinho</span>
-            {cartCount > 0 && (
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold">
-                {cartCount}
-              </span>
+          <div className="flex items-center gap-2">
+            {loggedCustomer ? (
+              <div className="flex items-center gap-1.5 bg-muted/60 hover:bg-muted p-1 sm:px-2.5 sm:py-1.5 rounded-lg border text-xs cursor-pointer"
+                onClick={() => setOrdersModalOpen(true)}>
+                <User className="h-4 w-4 text-primary" />
+                <span className="hidden sm:inline font-medium max-w-[100px] truncate">{loggedCustomer.name.split(" ")[0]}</span>
+                <Badge variant="outline" className="hidden sm:inline text-[10px] px-1 py-0 border-primary text-primary">Meus Pedidos</Badge>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setAuthMode("login");
+                  setAuthModalOpen(true);
+                }}
+                className="text-xs gap-1.5 h-9 border-primary/40 text-primary hover:bg-primary/10"
+              >
+                <User className="h-4 w-4" />
+                <span>Entrar</span>
+              </Button>
             )}
-          </button>
+
+            <button onClick={() => setCartOpen(true)}
+              className="relative flex items-center gap-2 bg-primary text-primary-foreground px-3 sm:px-4 py-2 rounded-lg font-medium text-sm hover:bg-primary/90 transition-colors">
+              <ShoppingCart className="h-4 w-4" />
+              <span className="hidden sm:inline">Carrinho</span>
+              {cartCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold">
+                  {cartCount}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Mobile search */}
@@ -486,16 +566,18 @@ export default function Cardapio() {
       {/* Checkout Modal */}
       {checkoutOpen && (
         <>
-          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
-              <div className="flex items-center justify-between p-5 border-b">
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-2 sm:p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+              {/* Header fixo */}
+              <div className="flex items-center justify-between p-4 sm:p-5 border-b shrink-0 bg-white">
                 <h2 className="font-bold text-lg">Confirmar Pedido</h2>
-                <button onClick={() => setCheckoutOpen(false)} className="p-1 rounded hover:bg-muted">
+                <button onClick={() => setCheckoutOpen(false)} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground">
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
-              <div className="p-5 space-y-4">
+              {/* Corpo com scroll */}
+              <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
                 {/* Resumo */}
                 <div className="bg-muted/40 rounded-xl p-3 space-y-1">
                   {cart.map((item, idx) => (
@@ -511,12 +593,13 @@ export default function Cardapio() {
                       )}
                     </div>
                   ))}
-                  <div className="border-t pt-1 mt-1 flex justify-between font-bold">
-                    <span>Total</span><span>{fmt(cartTotal)}</span>
+                  <div className="flex justify-between font-bold text-base pt-2 border-t">
+                    <span>Total</span>
+                    <span>{fmt(cartTotal)}</span>
                   </div>
                 </div>
 
-                {/* Dados do cliente */}
+                {/* Formulário */}
                 <div className="space-y-3">
                   <div>
                     <label className="text-sm font-medium flex items-center gap-1.5 mb-1.5">
@@ -525,13 +608,13 @@ export default function Cardapio() {
                     <Input placeholder="Ex: João Silva" value={customerName}
                       onChange={e => setCustomerName(e.target.value)} />
                   </div>
-                  <div>
-                    <label className="text-sm font-medium flex items-center gap-1.5 mb-1.5">
-                      <Phone className="h-4 w-4" /> WhatsApp (opcional)
-                    </label>
-                    <Input placeholder="(11) 99999-9999" value={customerPhone}
-                      onChange={e => setCustomerPhone(e.target.value)} />
-                  </div>
+                   <div>
+                     <label className="text-sm font-medium flex items-center gap-1.5 mb-1.5">
+                       <Phone className="h-4 w-4" /> WhatsApp <span className="text-red-500">*</span>
+                     </label>
+                     <Input placeholder="(11) 99999-9999" value={customerPhone} required
+                       onChange={e => setCustomerPhone(e.target.value)} />
+                   </div>
 
                   {/* Tipo de Entrega */}
                   <div className="space-y-2">
@@ -563,6 +646,10 @@ export default function Cardapio() {
                         onChange={e => setDeliveryAddress(e.target.value)} 
                         required={deliveryType === "entrega"}
                       />
+                      {/* Aviso de taxa de entrega */}
+                      <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-1.5">
+                        🛵 <span><strong>Atenção:</strong> Pode haver uma taxa de entrega cobrada no momento da entrega. O entregador informará o valor.</span>
+                      </p>
                     </div>
                   )}
 
@@ -571,7 +658,7 @@ export default function Cardapio() {
                     <p className="text-sm font-medium mb-1.5">Forma de pagamento</p>
                     <div className="grid grid-cols-4 gap-1.5">
                       {paymentMethods.map(pm => (
-                        <button key={pm.value} onClick={() => setPaymentMethod(pm.value)}
+                        <button key={pm.value} onClick={() => { setPaymentMethod(pm.value); setWantsChange(null); setChangeFor(""); }}
                           className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-xs font-medium transition-colors
                             ${paymentMethod === pm.value ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted"}`}>
                           <pm.icon className="h-4 w-4" />{pm.label}
@@ -579,6 +666,46 @@ export default function Cardapio() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Troco — só aparece se escolher Dinheiro */}
+                  {paymentMethod === "cash" && (
+                    <div className="bg-muted/40 border border-amber-200 rounded-lg p-3 space-y-2">
+                      <p className="text-sm font-medium flex items-center justify-between">
+                        <span>Precisa de troco? <span className="text-red-500">*</span></span>
+                        {wantsChange === null && (
+                          <span className="text-[11px] text-amber-600 font-normal">Obrigatório escolher</span>
+                        )}
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setWantsChange(true)}
+                          className={`py-2 rounded-lg border text-sm font-medium transition-colors ${wantsChange === true ? "border-primary bg-primary text-white shadow-sm" : "border-border bg-white hover:bg-muted"}`}
+                        >
+                          Sim
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setWantsChange(false); setChangeFor(""); }}
+                          className={`py-2 rounded-lg border text-sm font-medium transition-colors ${wantsChange === false ? "border-primary bg-primary text-white shadow-sm" : "border-border bg-white hover:bg-muted"}`}
+                        >
+                          Não
+                        </button>
+                      </div>
+                      {wantsChange === true && (
+                        <div className="pt-1">
+                          <label className="text-xs font-medium text-muted-foreground mb-1 block">Troco para quanto? (R$) *</label>
+                          <Input
+                            type="number"
+                            placeholder="Ex: 50 ou 100"
+                            value={changeFor}
+                            onChange={e => setChangeFor(e.target.value)}
+                            className="h-10 bg-white"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div>
                     <label className="text-sm font-medium flex items-center gap-1.5 mb-1.5">
@@ -588,8 +715,11 @@ export default function Cardapio() {
                       value={notes} onChange={e => setNotes(e.target.value)} rows={2} />
                   </div>
                 </div>
+              </div>
 
-                <Button className="w-full h-12 text-base" disabled={orderMutation.isPending}
+              {/* Botão fixo no rodapé */}
+              <div className="p-4 border-t bg-white shrink-0">
+                <Button className="w-full h-12 text-base font-semibold shadow-md" disabled={orderMutation.isPending}
                   onClick={() => orderMutation.mutate()}>
                   {orderMutation.isPending ? (
                     <span className="flex items-center gap-2">
@@ -740,6 +870,285 @@ export default function Cardapio() {
             </div>
           </div>
         </>
+      )}
+
+      {/* ── Modal de Login / Registro do Cliente ────────────────── */}
+      {authModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div>
+                <h3 className="font-bold text-base">
+                  {authMode === "login" ? "Acessar minha conta" : "Criar meu cadastro"}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {authMode === "login" ? "Acompanhe seus pedidos e converse pelo chat" : "Preencha seus dados para agilizar seus pedidos"}
+                </p>
+              </div>
+              <button onClick={() => setAuthModalOpen(false)} className="p-1 rounded hover:bg-muted text-muted-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {authMode === "login" ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">Seu WhatsApp (Telefone) *</label>
+                    <Input
+                      placeholder="(11) 99999-9999"
+                      value={authPhone}
+                      onChange={e => setAuthPhone(e.target.value)}
+                      className="h-10"
+                      autoFocus
+                    />
+                  </div>
+                  <Button
+                    className="w-full h-11 text-sm font-semibold"
+                    onClick={async () => {
+                      if (!authPhone.trim()) {
+                        toast.error("Informe seu número de WhatsApp");
+                        return;
+                      }
+                      const cleanPhone = authPhone.replace(/\D/g, "");
+                      try {
+                        // Busca cliente no Supabase
+                        const { data: found } = await (supabase as any)
+                          .from("customers")
+                          .select("*")
+                          .eq("store_id", storeId)
+                          .ilike("phone", `%${cleanPhone || authPhone.trim()}%`)
+                          .maybeSingle();
+
+                        if (found) {
+                          const session = {
+                            name: found.name,
+                            phone: found.phone || authPhone.trim(),
+                            address: found.address || "",
+                          };
+                          setLoggedCustomer(session);
+                          localStorage.setItem(`customer_session_${storeId}`, JSON.stringify(session));
+                          toast.success(`Bem-vindo(a) de volta, ${found.name.split(" ")[0]}!`);
+                          setAuthModalOpen(false);
+                          setAuthPhone("");
+                        } else {
+                          toast.info("Não encontramos seu cadastro. Preencha seus dados para cadastrar!");
+                          setAuthMode("register");
+                        }
+                      } catch {
+                        // Modo offline / sem tabela: cria sessão direta
+                        const session = {
+                          name: authPhone.trim(),
+                          phone: authPhone.trim(),
+                        };
+                        setLoggedCustomer(session);
+                        localStorage.setItem(`customer_session_${storeId}`, JSON.stringify(session));
+                        toast.success("Entrou com sucesso!");
+                        setAuthModalOpen(false);
+                      }
+                    }}
+                  >
+                    Entrar
+                  </Button>
+
+                  <div className="text-center pt-2">
+                    <p className="text-xs text-muted-foreground">
+                      Primeira vez por aqui?{" "}
+                      <button
+                        type="button"
+                        onClick={() => setAuthMode("register")}
+                        className="text-primary font-semibold hover:underline"
+                      >
+                        Cadastre-se
+                      </button>
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">Seu Nome Completo *</label>
+                    <Input
+                      placeholder="Ex: Maria Silva"
+                      value={authName}
+                      onChange={e => setAuthName(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">WhatsApp (Telefone) *</label>
+                    <Input
+                      placeholder="(11) 99999-9999"
+                      value={authPhone}
+                      onChange={e => setAuthPhone(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">Endereço de Entrega</label>
+                    <Input
+                      placeholder="Ex: Rua das Flores, 123, Bairro Centro"
+                      value={authAddress}
+                      onChange={e => setAuthAddress(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">Data de Aniversário (opcional) 🎂</label>
+                    <Input
+                      type="date"
+                      value={authBirthdate}
+                      onChange={e => setAuthBirthdate(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+
+                  <Button
+                    className="w-full h-11 text-sm font-semibold mt-2"
+                    onClick={async () => {
+                      if (!authName.trim()) {
+                        toast.error("Informe seu nome completo");
+                        return;
+                      }
+                      if (!authPhone.trim()) {
+                        toast.error("Informe seu WhatsApp");
+                        return;
+                      }
+
+                      const sessionData = {
+                        name: authName.trim(),
+                        phone: authPhone.trim(),
+                        address: authAddress.trim() || undefined,
+                        birthdate: authBirthdate || undefined,
+                      };
+
+                      try {
+                        await (supabase as any).from("customers").insert({
+                          store_id: storeId,
+                          name: sessionData.name,
+                          phone: sessionData.phone,
+                          address: sessionData.address || null,
+                          notes: sessionData.birthdate ? `Aniversário: ${sessionData.birthdate}` : null,
+                        });
+                      } catch (e) {
+                        console.warn("Erro ao salvar cliente no banco:", e);
+                      }
+
+                      setLoggedCustomer(sessionData);
+                      localStorage.setItem(`customer_session_${storeId}`, JSON.stringify(sessionData));
+                      toast.success(`Cadastro realizado com sucesso! Olá, ${sessionData.name.split(" ")[0]}!`);
+                      setAuthModalOpen(false);
+                      setAuthName("");
+                      setAuthPhone("");
+                      setAuthAddress("");
+                      setAuthBirthdate("");
+                    }}
+                  >
+                    Salvar e Entrar
+                  </Button>
+
+                  <div className="text-center pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode("login")}
+                      className="text-xs text-muted-foreground hover:text-primary"
+                    >
+                      Já tem cadastro? <span className="font-semibold text-primary">Fazer Login</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal de Meus Pedidos & Chat ──────────────────────────── */}
+      {ordersModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between p-4 border-b bg-white">
+              <div className="flex items-center gap-2">
+                <User className="h-5 w-5 text-primary" />
+                <div>
+                  <h3 className="font-bold text-base">{loggedCustomer?.name}</h3>
+                  <p className="text-xs text-muted-foreground">{loggedCustomer?.phone}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-red-500 hover:text-red-700 h-8 px-2"
+                  onClick={() => {
+                    localStorage.removeItem(`customer_session_${storeId}`);
+                    setLoggedCustomer(null);
+                    setOrdersModalOpen(false);
+                    toast.info("Você saiu da conta.");
+                  }}
+                >
+                  Sair
+                </Button>
+                <button onClick={() => setOrdersModalOpen(false)} className="p-1 rounded hover:bg-muted text-muted-foreground">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 overflow-y-auto flex-1 space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Histórico de Pedidos</p>
+
+              {/* Busca os pedidos do telefone do cliente */}
+              {(() => {
+                const cleanPhone = loggedCustomer?.phone?.replace(/\D/g, "") || "";
+                const offlineOrders = JSON.parse(localStorage.getItem(`orders_offline_${storeId}`) || "[]");
+                const matchedOffline = offlineOrders.filter((o: any) => 
+                  o.customer_phone && o.customer_phone.replace(/\D/g, "").includes(cleanPhone)
+                );
+
+                if (matchedOffline.length === 0) {
+                  return (
+                    <div className="text-center py-8 space-y-2">
+                      <ShoppingBag className="h-10 w-10 text-muted-foreground/40 mx-auto" />
+                      <p className="text-sm font-medium text-muted-foreground">Nenhum pedido recente</p>
+                      <p className="text-xs text-muted-foreground">Seus novos pedidos aparecerão aqui com acesso direto ao chat com a loja.</p>
+                    </div>
+                  );
+                }
+
+                return matchedOffline.map((o: any) => (
+                  <div key={o.id} className="p-3 border rounded-xl bg-muted/20 space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="font-bold">Pedido #{o.id.slice(-6).toUpperCase()}</span>
+                      <Badge variant="outline" className="text-xs font-semibold">
+                        {STATUS_LABELS[o.status] || o.status}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground flex justify-between">
+                      <span>Total: {fmt(o.total)}</span>
+                      <span>{new Date(o.created_at).toLocaleDateString("pt-BR")}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full text-xs h-8 gap-1.5 text-primary border-primary/30 hover:bg-primary/5"
+                      onClick={() => {
+                        setOrdersModalOpen(false);
+                        navigate(`/pedido/${o.id}`);
+                      }}
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      Acompanhar & Abrir Chat
+                    </Button>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -281,19 +281,48 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["store-orders", storeId] }); },
   });
 
-  // Cancelar
+  // Cancelar com motivo
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+
   const cancelMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (reason?: string) => {
+      const updatedNotes = reason?.trim()
+        ? (order.notes ? `${order.notes} | [Motivo do cancelamento: ${reason.trim()}]` : `[Motivo do cancelamento: ${reason.trim()}]`)
+        : order.notes;
+
       try {
         const { error } = await (supabase as any)
-          .from("orders").update({ status: "cancelled" }).eq("id", order.id);
+          .from("orders")
+          .update({ 
+            status: "cancelled",
+            notes: updatedNotes,
+          })
+          .eq("id", order.id);
         if (error) throw error;
       } catch {
+        // offline
+        const storeKeys = Object.keys(localStorage).filter(k => k.startsWith("orders_offline_"));
+        for (const key of storeKeys) {
+          const orders = JSON.parse(localStorage.getItem(key) || "[]");
+          const idx = orders.findIndex((o: any) => o.id === order.id);
+          if (idx !== -1) { 
+            orders[idx].status = "cancelled"; 
+            orders[idx].notes = updatedNotes;
+            localStorage.setItem(key, JSON.stringify(orders)); 
+          }
+        }
         queryClient.setQueryData<Order[]>(["store-orders", storeId],
-          old => old?.map(o => o.id === order.id ? { ...o, status: "cancelled" } : o));
+          old => old?.map(o => o.id === order.id ? { ...o, status: "cancelled", notes: updatedNotes } : o));
       }
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["store-orders", storeId] }); },
+    onSuccess: () => { 
+      toast.success("Pedido recusado/cancelado.");
+      setCancelDialogOpen(false);
+      setCancelReason("");
+      queryClient.invalidateQueries({ queryKey: ["store-orders", storeId] }); 
+    },
+    onError: (e: any) => toast.error(`Erro ao cancelar: ${e.message}`),
   });
 
   // Enviar mensagem (como loja)
@@ -482,12 +511,61 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
             <Button size="sm" variant="outline" 
               className={cn("text-destructive border-destructive/30 hover:bg-red-50", compact ? "h-7 px-2" : "h-9")}
               disabled={cancelMutation.isPending}
-              onClick={() => { if (confirm("Recusar pedido?")) cancelMutation.mutate(); }}>
+              onClick={() => setCancelDialogOpen(true)}>
               <XCircle className={cn(compact ? "h-3 w-3" : "h-4 w-4 mr-1")} />
               {!compact && " Recusar"}
             </Button>
           )}
       </div>
+
+      {/* Modal de Motivo de Cancelamento / Recusa */}
+      {cancelDialogOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2 text-red-600 font-bold">
+                <XCircle className="h-5 w-5" />
+                <span>Recusar / Cancelar Pedido</span>
+              </div>
+              <button onClick={() => setCancelDialogOpen(false)} className="p-1 rounded hover:bg-muted text-muted-foreground">
+                <XCircle className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium mb-1">Motivo do cancelamento (opcional):</p>
+              <p className="text-xs text-muted-foreground mb-2">Este motivo ficará visível para o cliente no acompanhamento do pedido.</p>
+              <textarea
+                placeholder="Ex: Ingredientes esgotados, fora da área de entrega, loja fechando..."
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                className="w-full h-24 p-3 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex gap-2 justify-end pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCancelDialogOpen(false)}
+                disabled={cancelMutation.isPending}
+              >
+                Voltar
+              </Button>
+              <Button
+                size="sm"
+                className="bg-red-600 hover:bg-red-700 text-white font-semibold"
+                disabled={cancelMutation.isPending}
+                onClick={() => cancelMutation.mutate(cancelReason)}
+              >
+                {cancelMutation.isPending ? "Recusando..." : "Confirmar Recusa"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Expanded: Itens detalhados + Chat */}
       {expanded && (
         <div className="border-t">
@@ -591,22 +669,34 @@ export default function Pedidos() {
     },
   });
 
-  // Carregar pedidos
+  // Carregar pedidos (Online + Offline)
   const { data: orders = [], isLoading, refetch } = useQuery<Order[]>({
     queryKey: ["store-orders", storeId],
-    refetchInterval: 10000,
+    refetchInterval: 5000,
     queryFn: async () => {
+      let onlineOrders: Order[] = [];
       try {
         const { data, error } = await (supabase as any)
           .from("orders").select("*")
           .eq("store_id", storeId).order("created_at", { ascending: false });
-        if (error) throw error;
-        return data as Order[];
-      } catch {
-        // offline
-        const key = `orders_offline_${storeId}`;
-        return JSON.parse(localStorage.getItem(key) || "[]") as Order[];
+        if (!error && data) {
+          onlineOrders = data as Order[];
+        }
+      } catch (e) {
+        console.warn("Erro ao buscar pedidos online:", e);
       }
+
+      // Busca também pedidos locais (offline) e junta sem duplicar
+      const key = `orders_offline_${storeId}`;
+      const offlineOrders: Order[] = JSON.parse(localStorage.getItem(key) || "[]");
+      
+      // Filtra os que já estão no online pelo ID
+      const onlineIds = new Set(onlineOrders.map(o => o.id));
+      const onlyOffline = offlineOrders.filter(o => !onlineIds.has(o.id));
+
+      const all = [...onlineOrders, ...onlyOffline];
+      all.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      return all;
     },
   });
 

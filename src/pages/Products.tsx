@@ -535,7 +535,7 @@ export default function Products() {
                     </div>
                     <div className="flex-1 space-y-3">
                       <div>
-                        <p className="text-xs font-semibold text-muted-foreground mb-1.5">Opção 1: Fazer upload do computador</p>
+                        <p className="text-xs font-semibold text-muted-foreground mb-1.5">Opção 1: Câmera do celular ou arquivo</p>
                         <Input 
                           type="file" 
                           accept="image/*" 
@@ -545,26 +545,86 @@ export default function Products() {
                             if (!file) return;
                             
                             try {
-                              toast.loading("Enviando imagem...");
-                              const fileExt = file.name.split('.').pop();
-                              const fileName = `${storeId}/${Math.random()}.${fileExt}`;
+                              toast.loading("Processando e otimizando imagem...");
                               
-                              const { data, error } = await supabase.storage
-                                .from('product-images')
-                                .upload(fileName, file);
+                              // Comprime e redimensiona a imagem para não estourar limite do celular nem do Supabase
+                              const compressImage = (imageFile: File): Promise<Blob> => {
+                                return new Promise((resolve, reject) => {
+                                  const reader = new FileReader();
+                                  reader.readAsDataURL(imageFile);
+                                  reader.onload = (event) => {
+                                    const img = new Image();
+                                    img.src = event.target?.result as string;
+                                    img.onload = () => {
+                                      const canvas = document.createElement('canvas');
+                                      const maxDim = 800; // 800px max
+                                      let width = img.width;
+                                      let height = img.height;
 
-                              if (error) throw error;
+                                      if (width > height) {
+                                        if (width > maxDim) {
+                                          height = Math.round((height * maxDim) / width);
+                                          width = maxDim;
+                                        }
+                                      } else {
+                                        if (height > maxDim) {
+                                          width = Math.round((width * maxDim) / height);
+                                          height = maxDim;
+                                        }
+                                      }
 
-                              const { data: { publicUrl } } = supabase.storage
-                                .from('product-images')
-                                .getPublicUrl(fileName);
+                                      canvas.width = width;
+                                      canvas.height = height;
+                                      const ctx = canvas.getContext('2d');
+                                      ctx?.drawImage(img, 0, 0, width, height);
 
-                              setField("image_url", publicUrl);
-                              toast.dismiss();
-                              toast.success("Imagem enviada!");
+                                      canvas.toBlob((blob) => {
+                                        if (blob) resolve(blob);
+                                        else reject(new Error("Erro ao comprimir imagem"));
+                                      }, 'image/jpeg', 0.82);
+                                    };
+                                    img.onerror = reject;
+                                  };
+                                  reader.onerror = reject;
+                                });
+                              };
+
+                              const compressedBlob = await compressImage(file);
+                              const fileName = `${storeId}/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+                              
+                              // Tenta subir no Storage do Supabase
+                              try {
+                                const { error } = await supabase.storage
+                                  .from('product-images')
+                                  .upload(fileName, compressedBlob, {
+                                    contentType: 'image/jpeg',
+                                    upsert: true
+                                  });
+
+                                if (error) throw error;
+
+                                const { data: { publicUrl } } = supabase.storage
+                                  .from('product-images')
+                                  .getPublicUrl(fileName);
+
+                                setField("image_url", publicUrl);
+                                toast.dismiss();
+                                toast.success("Foto enviada com sucesso!");
+                              } catch (uploadErr) {
+                                // Fallback base64 direto se o bucket não existir ou estiver offline
+                                console.warn("Erro ao subir no bucket, usando base64 direto:", uploadErr);
+                                const reader = new FileReader();
+                                reader.readAsDataURL(compressedBlob);
+                                reader.onloadend = () => {
+                                  const base64Data = reader.result as string;
+                                  setField("image_url", base64Data);
+                                  toast.dismiss();
+                                  toast.success("Foto salva no produto!");
+                                };
+                              }
                             } catch (err: any) {
                               toast.dismiss();
-                              toast.error(`Erro ao subir imagem: ${err.message}`);
+                              toast.error(`Erro ao processar foto: ${err.message}`);
                             }
                           }}
                         />

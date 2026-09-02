@@ -17,34 +17,65 @@ export default function Clientes() {
   const [editingCustomer, setEditingCustomer] = useState<any>(null);
   const [historyCustomer, setHistoryCustomer] = useState<any>(null);
 
-  // Busca loja
-  const { data: store } = useQuery({
-    queryKey: ["user-store", session?.user?.id],
+  // Busca profile para pegar store_id correto
+  const { data: profile } = useQuery({
+    queryKey: ["profile", session?.user?.id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("stores")
-        .select("*")
-        .eq("user_id", session?.user?.id)
-        .maybeSingle();
+        .from("profiles")
+        .select("store_id")
+        .eq("auth_user_id", session!.user!.id)
+        .single();
       if (error) throw error;
       return data;
     },
     enabled: !!session?.user?.id,
   });
 
-  // Busca clientes
-  const { data: customers, isLoading } = useQuery({
-    queryKey: ["store-customers", store?.id],
+  const storeId = profile?.store_id ?? session?.user?.id;
+
+  // Busca loja
+  const { data: store } = useQuery({
+    queryKey: ["user-store", storeId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("customers")
+        .from("stores")
         .select("*")
-        .eq("store_id", store?.id)
-        .order("name");
+        .eq("id", storeId!)
+        .maybeSingle();
       if (error) throw error;
       return data;
     },
-    enabled: !!store?.id,
+    enabled: !!storeId,
+  });
+
+  // Busca clientes (Online + Offline)
+  const { data: customers = [], isLoading } = useQuery({
+    queryKey: ["store-customers", storeId],
+    queryFn: async () => {
+      let onlineList: any[] = [];
+      try {
+        const { data, error } = await supabase
+          .from("customers")
+          .select("*")
+          .eq("store_id", storeId!)
+          .order("name");
+        if (!error && data) {
+          onlineList = data;
+        }
+      } catch (e) {
+        console.warn("Erro ao buscar clientes online:", e);
+      }
+
+      // Busca também clientes salvos localmente
+      const localKey = `customers_local_${storeId}`;
+      const localList: any[] = JSON.parse(localStorage.getItem(localKey) || "[]");
+      const onlinePhones = new Set(onlineList.map(c => c.phone?.replace(/\D/g, "")).filter(Boolean));
+      const onlyLocal = localList.filter(c => !onlinePhones.has(c.phone?.replace(/\D/g, "")));
+
+      return [...onlineList, ...onlyLocal];
+    },
+    enabled: !!storeId,
   });
 
   const filteredCustomers = customers?.filter((c: any) =>
@@ -175,14 +206,14 @@ export default function Clientes() {
         isOpen={isFormOpen} 
         onClose={() => setIsFormOpen(false)} 
         customer={editingCustomer}
-        storeId={store?.id}
+        storeId={storeId || store?.id}
       />
 
       <ClienteHistoricoModal
         isOpen={!!historyCustomer}
         onClose={() => setHistoryCustomer(null)}
         customer={historyCustomer}
-        storeId={store?.id}
+        storeId={storeId || store?.id}
       />
     </>
   );

@@ -15,6 +15,7 @@ import {
   UtensilsCrossed, AlertCircle, RefreshCw, Eye, EyeOff,
   FileText, Save, ExternalLink as ExtLink, Shield, Radio, Printer,
   CheckCircle2, Star, Clock, ShoppingBag, Receipt, Percent, LayoutGrid,
+  Lock, KeyRound, ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -62,7 +63,7 @@ function maskCnpj(v: string) {
 export default function SettingsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "assinatura" | "ifood" | "asaas" | "impressora" | "pdv" | "mesas">("links");
+  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "assinatura" | "ifood" | "asaas" | "impressora" | "pdv" | "mesas" | "seguranca">("links");
   const [sefazServico, setSefazServico] = useState<SefazServico>("NFeAutorizacao");
   const [showToken, setShowToken] = useState(false);
   const [nfe, setNfe] = useState<NfeConfig>({});
@@ -70,6 +71,24 @@ export default function SettingsPage() {
   const [asaas, setAsaas] = useState<AsaasConfig>({});
   const [nfeLoaded, setNfeLoaded] = useState(false);
   const [mesasConfig, setMesasConfig] = useState({ table_count: 0, has_counters: false, counter_count: 0, table_fee: 0 });
+
+  // ── Permissões & Senha Master ─────────────────────────────────────────────────
+  const [adminPassword, setAdminPassword] = useState(() => localStorage.getItem("pdv_admin_password") || "");
+  const [editAdminPassword, setEditAdminPassword] = useState("");
+  const [confirmEditAdminPassword, setConfirmEditAdminPassword] = useState("");
+
+  // ── Vendedoras ────────────────────────────────────────────────────────────────
+  const [sellers, setSellers] = useState<{ name: string; commission: number }[]>(() =>
+    JSON.parse(localStorage.getItem("pdv_sellers") || "[]")
+  );
+  const [newSellerName, setNewSellerName] = useState("");
+  const [newSellerCommission, setNewSellerCommission] = useState<number>(10);
+
+  const saveSellers = (list: { name: string; commission: number }[]) => {
+    setSellers(list);
+    localStorage.setItem("pdv_sellers", JSON.stringify(list));
+    toast.success("Vendedoras atualizadas!");
+  };
 
   // ── Query: perfil ──────────────────────────────────────────────────────────
   const {
@@ -229,6 +248,53 @@ export default function SettingsPage() {
     },
   });
 
+  // ── Query: past_sales (Histórico de vendas para NF-e) ──────────────────────
+  const { data: pastSales, isLoading: pastSalesLoading } = useQuery({
+    queryKey: ["past_sales", profile?.store_id],
+    enabled: !!profile?.store_id && activeTab === "asaas",
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("sales")
+        .select("*, sale_items(*, product:products(*))")
+        .eq("store_id", profile!.store_id!)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // ── Mutation: emitir NF-e retrospectiva ────────────────────────────────────
+  const emitNfeMutation = useMutation({
+    mutationFn: async (sale: any) => {
+      if (!profile?.store_id) throw new Error("Loja não encontrada");
+      
+      const itemsDesc = sale.sale_items?.map((i: any) => `${i.quantity}x ${i.product?.name || 'Item'}`).join(", ") || 'Venda';
+      
+      const nfePayload = {
+        action: 'create_invoice',
+        storeId: profile.store_id,
+        payload: {
+          customerName: 'Consumidor Final',
+          customerCpfCnpj: '', 
+          value: sale.total,
+          serviceDescription: `Venda #${sale.id.slice(0,6)} - Itens: ${itemsDesc}`
+        }
+      };
+
+      const { data, error } = await supabase.functions.invoke('asaas-api', {
+        body: nfePayload
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("NF-e emitida com sucesso!");
+    },
+    onError: (e: any) => toast.error(`Erro ao emitir NF-e: ${e.message}`),
+  });
+
   // Inicializa o formulário NFe quando os secrets chegarem
   useEffect(() => {
     if (!nfeLoaded && secrets) {
@@ -283,8 +349,8 @@ export default function SettingsPage() {
   });
 
   const storeId     = profile?.store_id ?? null;
-  const pdvUrl      = storeId ? `${window.location.origin}/pdv/${storeId}`      : null;
-  const cardapioUrl = storeId ? `${window.location.origin}/cardapio/${storeId}` : null;
+  const pdvUrl      = storeId ? `${window.location.origin}/#/pdv/${storeId}`      : null;
+  const cardapioUrl = storeId ? `${window.location.origin}/#/cardapio/${storeId}` : null;
 
   const copyLink = (url: string | null) => {
     if (!url) return;
@@ -382,7 +448,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Grade de Ícones (Tabs) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-3">
         {([
           { id: "links",       label: "Links",       icon: Link2 },
           { id: "integracoes", label: "Integrações", icon: Radio },
@@ -392,6 +458,7 @@ export default function SettingsPage() {
           { id: "impressora",  label: "Impressora",  icon: Printer },
           { id: "pdv",         label: "PDV",         icon: ShoppingCart },
           { id: "mesas",       label: "Mesas",       icon: LayoutGrid },
+          { id: "seguranca",   label: "Permissões",  icon: ShieldCheck },
         ] as const).map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -617,6 +684,7 @@ export default function SettingsPage() {
 
       {/* ── ABA: ASAAS ────────────────────────────────────────────────────────── */}
       {activeTab === "asaas" && (
+        <>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -673,6 +741,47 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Histórico de Vendas para NF-e */}
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileText className="h-5 w-5 text-slate-500" />
+              Histórico de Vendas (Emissão Retroativa)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {pastSalesLoading ? (
+              <Skeleton className="h-32 w-full" />
+            ) : pastSales && pastSales.length > 0 ? (
+              <div className="space-y-3">
+                {pastSales.map((sale: any) => (
+                  <div key={sale.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 border rounded-lg hover:bg-slate-50 transition-colors">
+                    <div>
+                      <p className="font-semibold text-sm">Venda #{sale.id.slice(0, 6)} - R$ {sale.total?.toFixed(2)}</p>
+                      <p className="text-xs text-slate-500">
+                        {new Date(sale.created_at).toLocaleString('pt-BR')}
+                      </p>
+                    </div>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="mt-2 sm:mt-0 text-blue-600 border-blue-200 hover:bg-blue-50 gap-2"
+                      onClick={() => emitNfeMutation.mutate(sale)}
+                      disabled={emitNfeMutation.isPending}
+                    >
+                      <Receipt className="h-4 w-4" />
+                      Emitir NF-e Agora
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500 text-center py-6">Nenhuma venda encontrada.</p>
+            )}
+          </CardContent>
+        </Card>
+        </>
       )}
 
       {/* ── ABA: ASSINATURA ─────────────────────────────────────────────────── */}
@@ -971,6 +1080,118 @@ export default function SettingsPage() {
                 </Label>
               </div>
             </div>
+
+            <Separator />
+
+            {/* ── Vendedoras e Comissões ─────────────────────────────────── */}
+            <Separator />
+            <div className="space-y-4">
+              <div>
+                <h3 className="font-semibold">Vendedoras e Comissões</h3>
+                <p className="text-sm text-muted-foreground">
+                  Cadastre as vendedoras e suas % de comissão. Na hora da venda, o caixa poderá selecionar quem atendeu.
+                </p>
+              </div>
+
+              {/* Lista de vendedoras */}
+              {sellers.length > 0 && (
+                <div className="space-y-2">
+                  {sellers.map((s, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
+                      <div>
+                        <span className="font-medium text-sm">{s.name}</span>
+                        <span className="ml-2 text-xs text-emerald-600 font-medium">{s.commission}% comissão</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => saveSellers(sellers.filter((_, idx) => idx !== i))}
+                        className="text-red-400 hover:text-red-600 text-xs font-medium"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Adicionar nova vendedora */}
+              <div className="flex gap-2 items-end">
+                <div className="flex-1 space-y-1">
+                  <Label className="text-xs">Nome da vendedora</Label>
+                  <Input
+                    placeholder="Ex: Maria"
+                    value={newSellerName}
+                    onChange={e => setNewSellerName(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                <div className="w-28 space-y-1">
+                  <Label className="text-xs">Comissão (%)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={newSellerCommission}
+                    onChange={e => setNewSellerCommission(Number(e.target.value))}
+                    className="h-9"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  className="h-9 shrink-0"
+                  disabled={!newSellerName.trim()}
+                  onClick={() => {
+                    if (!newSellerName.trim()) return;
+                    saveSellers([...sellers, { name: newSellerName.trim(), commission: newSellerCommission }]);
+                    setNewSellerName("");
+                    setNewSellerCommission(10);
+                  }}
+                >
+                  + Adicionar
+                </Button>
+              </div>
+            </div>
+
+            {/* Visibilidade do Menu Lateral */}
+            <Separator />
+            <div className="space-y-3">
+              <h3 className="font-semibold">Visibilidade do Menu Lateral</h3>
+              <p className="text-sm text-muted-foreground">
+                Ative ou desative os itens do menu. Útil para lojas que não usam delivery ou mesas.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                {[
+                  { key: "nav_show_delivery",   label: "Delivery"   },
+                  { key: "nav_show_pedidos",    label: "Pedidos"    },
+                  { key: "nav_show_clientes",   label: "Clientes"   },
+                  { key: "nav_show_estoque",    label: "Estoque"    },
+                  { key: "nav_show_relatorios", label: "Relatórios" },
+                ].map((item) => {
+                  const stored = localStorage.getItem(item.key);
+                  const isOn = stored === null ? true : stored === "true";
+                  return (
+                    <div key={item.key} className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                      <Label className="font-medium">{item.label}</Label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localStorage.setItem(item.key, (!isOn).toString());
+                          setNfe({ ...nfe });
+                          toast.success(`${item.label} ${!isOn ? "ativado" : "desativado"} no menu!`);
+                        }}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isOn ? "bg-primary" : "bg-gray-300"}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isOn ? "translate-x-6" : "translate-x-1"}`} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded p-2">
+                ⚠️ As alterações entram em vigor após recarregar a página (F5).
+              </p>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -1040,6 +1261,160 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* ── ABA: SEGURANÇA & PERMISSÕES ──────────────────────────────────────── */}
+      {activeTab === "seguranca" && (
+        <div className="space-y-6">
+          {/* Card: Senha Mestre do Administrador */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <KeyRound className="h-5 w-5 text-blue-600" />
+                Senha Master do Administrador
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Esta senha é solicitada ao abrir as <strong>Configurações</strong> e ao tentar acessar as abas protegidas da loja.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <Label>Nova Senha Master</Label>
+                  <Input
+                    type="password"
+                    placeholder="Digite a nova senha"
+                    value={editAdminPassword}
+                    onChange={e => setEditAdminPassword(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label>Confirmar Nova Senha</Label>
+                  <Input
+                    type="password"
+                    placeholder="Repita a nova senha"
+                    value={confirmEditAdminPassword}
+                    onChange={e => setConfirmEditAdminPassword(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    if (!editAdminPassword || editAdminPassword.length < 4) {
+                      toast.error("A senha deve ter pelo menos 4 dígitos/letras.");
+                      return;
+                    }
+                    if (editAdminPassword !== confirmEditAdminPassword) {
+                      toast.error("As senhas digitadas não coincidem.");
+                      return;
+                    }
+                    localStorage.setItem("pdv_admin_password", editAdminPassword);
+                    setAdminPassword(editAdminPassword);
+                    setEditAdminPassword("");
+                    setConfirmEditAdminPassword("");
+                    toast.success("Senha Master salva com sucesso!");
+                  }}
+                  className="gap-2"
+                >
+                  <Save className="h-4 w-4" />
+                  Salvar Nova Senha Master
+                </Button>
+
+                {adminPassword && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (window.confirm("Deseja realmente remover a senha master? Qualquer pessoa poderá acessar todas as abas.")) {
+                        localStorage.removeItem("pdv_admin_password");
+                        setAdminPassword("");
+                        toast.success("Senha master removida.");
+                      }
+                    }}
+                    className="text-destructive hover:bg-destructive/10"
+                  >
+                    Remover Senha
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Card: Proteção de Abas da Barra Lateral */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Lock className="h-5 w-5 text-amber-500" />
+                Bloqueio de Abas para Funcionários
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Escolha quais abas exigem a senha master para abrir ou ficam completamente escondidas até que o administrador desbloqueie.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="divide-y">
+                {[
+                  { key: "reports", label: "Relatórios & Faturamento", desc: "Esconder faturamento diário, vendas brutas e lucros da equipe." },
+                  { key: "stock", label: "Estoque & Entradas", desc: "Proteger o controle de custos, saldo e inventário." },
+                  { key: "clientes", label: "Clientes & Contatos", desc: "Restringir acesso aos dados dos clientes cadastrados." },
+                  { key: "products", label: "Cadastro de Produtos", desc: "Evitar que funcionários alterem preços ou excluam produtos." },
+                  { key: "pedidos", label: "Pedidos & Gestão Online", desc: "Exigir senha para ver a gestão de pedidos online." },
+                ].map((item) => {
+                  const isLocked = localStorage.getItem(`lock_tab_${item.key}`) === "true";
+                  const hideWhenLocked = localStorage.getItem(`hide_when_locked_${item.key}`) === "true";
+
+                  return (
+                    <div key={item.key} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <p className="font-semibold text-sm flex items-center gap-2">
+                          {item.label}
+                          {isLocked && <Badge variant="secondary" className="bg-amber-100 text-amber-800 text-[10px]">Protegida</Badge>}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{item.desc}</p>
+                      </div>
+
+                      <div className="flex items-center gap-4 shrink-0">
+                        <label className="flex items-center gap-2 text-xs cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isLocked}
+                            onChange={(e) => {
+                              localStorage.setItem(`lock_tab_${item.key}`, String(e.target.checked));
+                              toast.success(`Configuração de ${item.label} atualizada!`);
+                              queryClient.invalidateQueries();
+                              // Forçar re-render
+                              setActiveTab("seguranca");
+                            }}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="font-medium">Exigir Senha</span>
+                        </label>
+
+                        {isLocked && (
+                          <label className="flex items-center gap-2 text-xs cursor-pointer text-muted-foreground">
+                            <input
+                              type="checkbox"
+                              checked={hideWhenLocked}
+                              onChange={(e) => {
+                                localStorage.setItem(`hide_when_locked_${item.key}`, String(e.target.checked));
+                                toast.success(`Visibilidade de ${item.label} atualizada!`);
+                                queryClient.invalidateQueries();
+                                setActiveTab("seguranca");
+                              }}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span>Ocultar do menu</span>
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
     </div>

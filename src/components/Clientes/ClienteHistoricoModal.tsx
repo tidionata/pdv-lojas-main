@@ -17,50 +17,81 @@ interface ClienteHistoricoModalProps {
 export function ClienteHistoricoModal({ isOpen, onClose, customer, storeId }: ClienteHistoricoModalProps) {
   const navigate = useNavigate();
 
-  const { data: orders, isLoading } = useQuery({
-    queryKey: ["customer-orders", customer?.id],
+  const { data: orders = [], isLoading } = useQuery({
+    queryKey: ["customer-orders", customer?.id, customer?.phone, customer?.name],
     queryFn: async () => {
-      // First try by customer_id, if not available try by exact phone/name
-      let query = supabase
-        .from("orders")
-        .select(`
-          *,
-          order_items (
-            quantity,
-            unit_price,
-            total_price,
-            product:products (id, name, type)
-          )
-        `)
-        .eq("store_id", storeId)
-        .order("created_at", { ascending: false })
-        .limit(10);
+      let onlineOrders: any[] = [];
+      const cleanPhone = customer?.phone?.replace(/\D/g, "");
 
-      if (customer?.id) {
-        // If we strictly link by customer_id
-        query = query.eq("customer_id", customer.id);
-      } else {
-        // Fallback or legacy records
-        query = query.eq("customer_phone", customer?.phone);
+      try {
+        let query = supabase
+          .from("orders")
+          .select(`
+            *,
+            order_items (
+              id,
+              quantity,
+              unit_price,
+              subtotal,
+              product_name,
+              additionals
+            )
+          `)
+          .eq("store_id", storeId)
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        if (customer?.id && customer.id !== "manual") {
+          query = query.or(`customer_id.eq.${customer.id},customer_name.ilike.%${customer.name}%`);
+        } else if (cleanPhone) {
+          query = query.or(`customer_phone.ilike.%${cleanPhone}%,customer_name.ilike.%${customer.name}%`);
+        } else if (customer?.name) {
+          query = query.ilike("customer_name", `%${customer.name}%`);
+        }
+
+        const { data, error } = await query;
+        if (!error && data) {
+          onlineOrders = data;
+        }
+      } catch (e) {
+        console.warn("Erro ao buscar histórico online:", e);
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      return data;
+      // Busca também pedidos salvos localmente
+      const localKey = `orders_offline_${storeId}`;
+      const localOrders: any[] = JSON.parse(localStorage.getItem(localKey) || "[]");
+      const matchedLocal = localOrders.filter((o: any) => {
+        const phoneMatch = cleanPhone && o.customer_phone?.replace(/\D/g, "")?.includes(cleanPhone);
+        const nameMatch = customer?.name && o.customer_name?.toLowerCase()?.includes(customer.name.toLowerCase());
+        return phoneMatch || nameMatch;
+      }).map((o: any) => ({
+        ...o,
+        order_items: (o.items || []).map((it: any) => ({
+          quantity: it.quantity || 1,
+          unit_price: it.unit_price || 0,
+          subtotal: it.subtotal || (it.unit_price * it.quantity),
+          product_name: it.product_name,
+          additionals: it.additionals || []
+        }))
+      }));
+
+      const onlineIds = new Set(onlineOrders.map(o => o.id));
+      const onlyLocal = matchedLocal.filter(o => !onlineIds.has(o.id));
+
+      const all = [...onlineOrders, ...onlyLocal];
+      all.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      return all;
     },
     enabled: isOpen && !!customer && !!storeId,
   });
 
   const handleRepeatOrder = (order: any) => {
-    // Navigate to PDV with a special state to load these items
-    // Since state passing via React Router can be tricky if the PDV doesn't expect it,
-    // we can use localStorage to temporarily hold the duplicate order data
-    
     try {
-      const itemsToDuplicate = order.order_items.map((item: any) => ({
-        product: item.product,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
+      const itemsToDuplicate = (order.order_items || []).map((item: any) => ({
+        name: item.product_name || item.product?.name || "Produto",
+        quantity: item.quantity || 1,
+        unit_price: item.unit_price || 0,
+        price: item.unit_price || 0,
       }));
       
       localStorage.setItem("pdv_duplicate_cart", JSON.stringify({
@@ -71,7 +102,7 @@ export function ClienteHistoricoModal({ isOpen, onClose, customer, storeId }: Cl
       }));
 
       toast.success("Itens carregados no PDV!");
-      navigate("/pdv");
+      navigate("/dashboard/pdv");
     } catch (e) {
       toast.error("Erro ao duplicar pedido.");
     }
@@ -121,9 +152,9 @@ export function ClienteHistoricoModal({ isOpen, onClose, customer, storeId }: Cl
                     <ul className="space-y-1">
                       {order.order_items?.map((item: any, i: number) => (
                         <li key={i} className="flex justify-between">
-                          <span>{item.quantity}x {item.product?.name || "Produto Excluído"}</span>
+                          <span>{item.quantity}x {item.product_name || item.product?.name || "Produto"}</span>
                           <span className="text-muted-foreground">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.total_price)}
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.subtotal || item.total_price || (item.unit_price * item.quantity) || 0)}
                           </span>
                         </li>
                       ))}
