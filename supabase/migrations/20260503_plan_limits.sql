@@ -23,8 +23,8 @@ CREATE POLICY "Plan limits are public" ON public.plan_limits
 -- 2. INICIALIZAÇÃO DOS LIMITES (Conforme descrição do Stripe)
 INSERT INTO public.plan_limits (plan, max_products, max_users, has_cardapio, has_pix_qr, max_stores)
 VALUES 
-  ('starter', 50, 1, false, false, 1),
-  ('pro', 150, 3, true, true, 1),
+  ('starter', 999999, 1, false, false, 1),
+  ('pro', 999999, 3, true, true, 1),
   ('business', 999999, 999999, true, true, 2)
 ON CONFLICT (plan) DO UPDATE SET
   max_products = EXCLUDED.max_products,
