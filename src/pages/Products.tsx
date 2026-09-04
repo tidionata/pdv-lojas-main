@@ -30,6 +30,8 @@ import { cn } from "@/lib/utils";
 
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 
+import { db } from "@/lib/db";
+
 type Product = Tables<"products">;
 
 type ProductAdditional = {
@@ -82,7 +84,7 @@ export default function Products() {
   const storeId = profile?.store_id ?? user?.id ?? "test-store";
 
 
-  // ── Produtos (com fallback offline em localStorage) ──────────────────────
+  // ── Produtos (com fallback offline em Dexie e localStorage) ───────────────
   const OFFLINE_KEY = `products_offline_${storeId}`;
 
   const getOfflineProducts = (): Product[] => {
@@ -94,16 +96,38 @@ export default function Products() {
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["products", storeId],
+    enabled: !!storeId,
     queryFn: async () => {
-      try {
-        const { data, error } = await supabase.from("products")
-          .select("*").eq("store_id", storeId!).order("name");
-        if (error) throw error;
-        return data as Product[];
-      } catch {
-        // Supabase offline → usa cache local
-        return getOfflineProducts();
+      // 1. Online -> Supabase
+      if (navigator.onLine) {
+        try {
+          const { data, error } = await supabase.from("products")
+            .select("*").eq("store_id", storeId!).order("name");
+          if (error) throw error;
+          if (data && data.length > 0) {
+            const localData = (data as Product[]).map(p => ({ ...p, _sync_status: 'synced' as const }));
+            await db.products.bulkPut(localData);
+          }
+          return data as Product[];
+        } catch (err) {
+          console.warn("[Produtos] Erro Supabase, tentando local:", err);
+        }
       }
+
+      // 2. Offline -> Dexie DB
+      try {
+        const localProducts = await db.products
+          .where("store_id").equals(storeId!)
+          .toArray();
+        if (localProducts.length > 0) {
+          return localProducts as unknown as Product[];
+        }
+      } catch (err) {
+        console.warn("[Produtos] Erro Dexie:", err);
+      }
+
+      // 3. Fallback localStorage
+      return getOfflineProducts();
     },
   });
 
@@ -358,7 +382,13 @@ export default function Products() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold font-['Space_Grotesk']">Produtos</h1>
-          <p className="text-muted-foreground text-sm">{products.length} produtos cadastrados</p>
+          <p className="text-muted-foreground text-sm">
+            {isLoading
+              ? "Carregando produtos..."
+              : search.trim()
+                ? `${filtered.length} de ${products.length} produtos encontrados`
+                : `${products.length} produtos cadastrados`}
+          </p>
         </div>
         <Button onClick={openNew}><Plus className="h-4 w-4 mr-2" /> Novo Produto</Button>
       </div>

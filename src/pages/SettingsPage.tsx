@@ -1082,8 +1082,6 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            </div>
-
             {/* Visibilidade do Menu Lateral */}
             <Separator />
             <div className="space-y-3">

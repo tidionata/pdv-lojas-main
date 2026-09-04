@@ -648,7 +648,7 @@ export default function PDV({ isDeliveryMode = false }: { isDeliveryMode?: boole
       return prodMenu === 'both' || prodMenu === activeMenu;
     });
 
-    if (!search.trim()) return menuFiltered.slice(0, 20);
+    if (!search.trim()) return menuFiltered;
     
     const q = search.toLowerCase();
     return menuFiltered.filter(
