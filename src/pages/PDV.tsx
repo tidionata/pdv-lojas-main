@@ -1880,71 +1880,74 @@ export default function PDV({ isDeliveryMode = false }: { isDeliveryMode?: boole
                 })
             )}
           </div>
+
+          {/* Submodal interno de confirmação dentro do mesmo Dialog (Zero conflito de foco) */}
+          {selectedSaleToCancel && (
+            <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 rounded-lg">
+              <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between border-b pb-3">
+                  <div className="flex items-center gap-2 text-red-600 font-bold text-lg">
+                    <AlertTriangle className="h-5 w-5" />
+                    <span>Cancelar / Estornar Venda</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSaleToCancel(null)}
+                    className="p-1 rounded hover:bg-muted text-muted-foreground"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="bg-red-50 border border-red-200 p-3 rounded-xl text-xs text-red-800 space-y-1">
+                  <p className="font-bold">Atenção:</p>
+                  <p>
+                    A venda <strong>#{selectedSaleToCancel.id.slice(-6).toUpperCase()}</strong> no valor de{" "}
+                    <strong>R$ {Number(selectedSaleToCancel.total).toFixed(2).replace(".", ",")}</strong> será cancelada.
+                  </p>
+                  <p>Os itens vendidos retornarão automaticamente ao estoque da loja.</p>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-semibold mb-1.5 block">Motivo do cancelamento (opcional):</Label>
+                  <Input
+                    placeholder="Ex: Desistência do cliente, erro de digitação, devolução..."
+                    value={cancelReasonInput}
+                    onChange={(e) => setCancelReasonInput(e.target.value)}
+                    className="h-10"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex gap-2 justify-end pt-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setSelectedSaleToCancel(null)}
+                    disabled={cancelSaleMutation.isPending}
+                  >
+                    Voltar
+                  </Button>
+                  <Button
+                    type="button"
+                    className="bg-red-600 hover:bg-red-700 text-white font-semibold gap-1.5"
+                    disabled={cancelSaleMutation.isPending}
+                    onClick={() =>
+                      cancelSaleMutation.mutate({
+                        saleId: selectedSaleToCancel.id,
+                        reason: cancelReasonInput,
+                        items: selectedSaleToCancel.sale_items,
+                      })
+                    }
+                  >
+                    {cancelSaleMutation.isPending ? "Cancelando..." : "Confirmar Cancelamento"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
-
-      {/* ═══ Modal: Confirmação e Motivo do Cancelamento ═══ */}
-      {selectedSaleToCancel && (
-        <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center gap-2 text-red-600 font-bold text-lg">
-                <AlertTriangle className="h-5 w-5" />
-                <span>Cancelar / Estornar Venda</span>
-              </div>
-              <button
-                onClick={() => setSelectedSaleToCancel(null)}
-                className="p-1 rounded hover:bg-muted text-muted-foreground"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="bg-red-50 border border-red-200 p-3 rounded-xl text-xs text-red-800 space-y-1">
-              <p className="font-bold">Atenção:</p>
-              <p>
-                A venda <strong>#{selectedSaleToCancel.id.slice(-6).toUpperCase()}</strong> no valor de{" "}
-                <strong>R$ {Number(selectedSaleToCancel.total).toFixed(2)}</strong> será cancelada.
-              </p>
-              <p>Os itens vendidos retornarão automaticamente ao estoque da loja.</p>
-            </div>
-
-            <div>
-              <Label className="text-sm font-semibold mb-1.5 block">Motivo do cancelamento (opcional):</Label>
-              <Input
-                placeholder="Ex: Desistência do cliente, erro de digitação, devolução..."
-                value={cancelReasonInput}
-                onChange={(e) => setCancelReasonInput(e.target.value)}
-                className="h-10"
-                autoFocus
-              />
-            </div>
-
-            <div className="flex gap-2 justify-end pt-3">
-              <Button
-                variant="outline"
-                onClick={() => setSelectedSaleToCancel(null)}
-                disabled={cancelSaleMutation.isPending}
-              >
-                Voltar
-              </Button>
-              <Button
-                className="bg-red-600 hover:bg-red-700 text-white font-semibold gap-1.5"
-                disabled={cancelSaleMutation.isPending}
-                onClick={() =>
-                  cancelSaleMutation.mutate({
-                    saleId: selectedSaleToCancel.id,
-                    reason: cancelReasonInput,
-                    items: selectedSaleToCancel.sale_items,
-                  })
-                }
-              >
-                {cancelSaleMutation.isPending ? "Cancelando..." : "Confirmar Cancelamento"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }
