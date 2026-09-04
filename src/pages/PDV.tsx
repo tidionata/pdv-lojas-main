@@ -21,6 +21,7 @@ import {
   ShoppingCart, Search, Plus, Minus, Trash2, CreditCard,
   Banknote, QrCode, Receipt, Percent, DollarSign, X, Printer,
   CheckCircle2, Image as ImageIcon, UtensilsCrossed, Edit2, Pencil,
+  History, Ban, RotateCcw, AlertTriangle,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { printToKitchen, buildKitchenReceiptHtml } from "@/lib/electronPrinting";
@@ -539,6 +540,13 @@ export default function PDV({ isDeliveryMode = false }: { isDeliveryMode?: boole
   const [modalPrice, setModalPrice] = useState<number | string>("");
   const [selectedAdds, setSelectedAdds] = useState<any[]>([]);
 
+  // ── Histórico de Vendas & Cancelamento ──────────────────────────────────────
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [historySearch, setHistorySearch] = useState("");
+  const [cancelingSaleId, setCancelingSaleId] = useState<string | null>(null);
+  const [cancelReasonInput, setCancelReasonInput] = useState("");
+  const [selectedSaleToCancel, setSelectedSaleToCancel] = useState<any | null>(null);
+
   useEffect(() => { searchRef.current?.focus(); }, []);
 
   useEffect(() => {
@@ -620,6 +628,78 @@ export default function PDV({ isDeliveryMode = false }: { isDeliveryMode?: boole
       return data || [];
     },
     refetchInterval: 5000
+  });
+
+  // Busca histórico recente de vendas para cancelamento e reimpressão
+  const { data: recentSales = [], refetch: refetchRecentSales, isLoading: loadingSales } = useQuery({
+    queryKey: ["recent_sales_pdv", storeId],
+    enabled: !!storeId && isValidUUID(storeId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("sales")
+        .select(`
+          id, total, discount, payment_method, status, notes, created_at,
+          sale_items (
+            id, product_id, quantity, unit_price, subtotal
+          )
+        `)
+        .eq("store_id", storeId)
+        .order("created_at", { ascending: false })
+        .limit(40);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  // Cancelar / Estornar Venda com devolução de estoque
+  const cancelSaleMutation = useMutation({
+    mutationFn: async ({ saleId, reason, items }: { saleId: string; reason: string; items?: any[] }) => {
+      const formattedReason = reason?.trim() ? `[Cancelado no PDV: ${reason.trim()}]` : "[Cancelado no PDV]";
+
+      // 1. Atualiza o status da venda para cancelled
+      const { error: updateError } = await supabase
+        .from("sales")
+        .update({
+          status: "cancelled",
+          notes: formattedReason,
+        })
+        .eq("id", saleId);
+
+      if (updateError) throw updateError;
+
+      // 2. Se a venda possuía itens, devolve a quantidade ao estoque dos produtos
+      if (items && items.length > 0) {
+        for (const item of items) {
+          if (item.product_id && isValidUUID(item.product_id)) {
+            // Busca o produto atual para somar o estoque
+            const { data: prod } = await supabase
+              .from("products")
+              .select("stock_quantity")
+              .eq("id", item.product_id)
+              .single();
+
+            if (prod && prod.stock_quantity !== null) {
+              const restoredStock = Number(prod.stock_quantity) + Number(item.quantity);
+              await supabase
+                .from("products")
+                .update({ stock_quantity: restoredStock })
+                .eq("id", item.product_id);
+            }
+          }
+        }
+      }
+    },
+    onSuccess: () => {
+      toast.success("Venda cancelada e estoque estornado com sucesso!");
+      setSelectedSaleToCancel(null);
+      setCancelReasonInput("");
+      refetchRecentSales();
+      queryClient.invalidateQueries({ queryKey: ["products", storeId] });
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
+    },
+    onError: (err: any) => {
+      toast.error("Erro ao cancelar venda: " + err.message);
+    }
   });
 
   // Products — lê do Dexie (banco local) quando offline, faz sync quando online
@@ -1140,15 +1220,30 @@ export default function PDV({ isDeliveryMode = false }: { isDeliveryMode?: boole
       <div className={`flex flex-col lg:flex-row gap-4 ${selectedTable ? 'h-[calc(100vh-12rem)]' : 'h-[calc(100vh-8rem)]'}`}>
         {/* Left: Product search & grid */}
         <div className="flex-1 flex flex-col min-w-0 gap-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              ref={searchRef}
-              placeholder="Buscar produto por nome ou código de barras..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-10 h-12 text-base"
-            />
+          <div className="flex gap-2 items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                ref={searchRef}
+                placeholder="Buscar produto por nome ou código de barras..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-10 h-12 text-base"
+              />
+            </div>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => {
+                refetchRecentSales();
+                setHistoryModalOpen(true);
+              }}
+              className="h-12 px-4 gap-2 border-primary/30 hover:bg-primary/10 text-primary font-semibold shrink-0"
+              title="Ver histórico de vendas do PDV e cancelamento/estorno"
+            >
+              <History className="h-5 w-5" />
+              <span className="hidden sm:inline">Histórico / Cancelar Venda</span>
+            </Button>
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -1674,6 +1769,181 @@ export default function PDV({ isDeliveryMode = false }: { isDeliveryMode?: boole
           storeId={store?.id || ""}
           customer={null}
         />
+      )}
+
+      {/* ═══ Modal: Histórico de Vendas & Cancelamento ═══ */}
+      <Dialog open={historyModalOpen} onOpenChange={setHistoryModalOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[85vh] flex flex-col p-6">
+          <DialogHeader className="pb-2 border-b">
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <History className="h-6 w-6 text-primary" />
+              Histórico de Vendas do PDV & Cancelamento
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="py-2 flex items-center gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Filtrar por código da venda (ID) ou forma de pagamento..."
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                className="pl-9 h-10"
+              />
+            </div>
+            <Button variant="outline" size="sm" onClick={() => refetchRecentSales()} className="h-10 gap-1.5">
+              <RotateCcw className="h-4 w-4" /> Atualizar
+            </Button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto border rounded-xl divide-y">
+            {loadingSales ? (
+              <div className="p-8 text-center text-muted-foreground">Carregando histórico de vendas...</div>
+            ) : recentSales.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground">Nenhuma venda recente encontrada.</div>
+            ) : (
+              recentSales
+                .filter((s: any) => {
+                  if (!historySearch.trim()) return true;
+                  const query = historySearch.toLowerCase();
+                  return (
+                    s.id.toLowerCase().includes(query) ||
+                    (s.payment_method && s.payment_method.toLowerCase().includes(query)) ||
+                    (s.notes && s.notes.toLowerCase().includes(query))
+                  );
+                })
+                .map((sale: any) => {
+                  const isCancelled = sale.status === "cancelled";
+                  const itemsCount = sale.sale_items?.length || 0;
+                  const saleDate = new Date(sale.created_at).toLocaleString("pt-BR");
+
+                  return (
+                    <div
+                      key={sale.id}
+                      className={`p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+                        isCancelled ? "bg-red-50/50 hover:bg-red-50" : "bg-card hover:bg-muted/30"
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-base">
+                            Venda #{sale.id.slice(-6).toUpperCase()}
+                          </span>
+                          {isCancelled ? (
+                            <Badge variant="destructive" className="flex items-center gap-1 font-semibold">
+                              <Ban className="h-3 w-3" /> CANCELADA
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-emerald-600 hover:bg-emerald-700">CONCLUÍDA</Badge>
+                          )}
+                          <span className="text-xs text-muted-foreground font-mono">{saleDate}</span>
+                        </div>
+
+                        <div className="text-sm text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
+                          <span>
+                            <strong>Pagamento:</strong> {paymentLabel[sale.payment_method] ?? sale.payment_method?.toUpperCase()}
+                          </span>
+                          <span>
+                            <strong>Itens:</strong> {itemsCount} {itemsCount === 1 ? "produto" : "produtos"}
+                          </span>
+                          {sale.notes && (
+                            <span className="text-amber-700 italic">
+                              {sale.notes}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 self-end sm:self-center shrink-0">
+                        <div className="text-right">
+                          <span className={`text-lg font-bold block ${isCancelled ? "line-through text-muted-foreground" : "text-emerald-600"}`}>
+                            R$ {Number(sale.total).toFixed(2).replace(".", ",")}
+                          </span>
+                        </div>
+
+                        {!isCancelled && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedSaleToCancel(sale);
+                              setCancelReasonInput("");
+                            }}
+                            className="text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200 gap-1.5 h-9"
+                          >
+                            <Ban className="h-4 w-4" /> Cancelar Venda
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ Modal: Confirmação e Motivo do Cancelamento ═══ */}
+      {selectedSaleToCancel && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2 text-red-600 font-bold text-lg">
+                <AlertTriangle className="h-5 w-5" />
+                <span>Cancelar / Estornar Venda</span>
+              </div>
+              <button
+                onClick={() => setSelectedSaleToCancel(null)}
+                className="p-1 rounded hover:bg-muted text-muted-foreground"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="bg-red-50 border border-red-200 p-3 rounded-xl text-xs text-red-800 space-y-1">
+              <p className="font-bold">Atenção:</p>
+              <p>
+                A venda <strong>#{selectedSaleToCancel.id.slice(-6).toUpperCase()}</strong> no valor de{" "}
+                <strong>R$ {Number(selectedSaleToCancel.total).toFixed(2)}</strong> será cancelada.
+              </p>
+              <p>Os itens vendidos retornarão automaticamente ao estoque da loja.</p>
+            </div>
+
+            <div>
+              <Label className="text-sm font-semibold mb-1.5 block">Motivo do cancelamento (opcional):</Label>
+              <Input
+                placeholder="Ex: Desistência do cliente, erro de digitação, devolução..."
+                value={cancelReasonInput}
+                onChange={(e) => setCancelReasonInput(e.target.value)}
+                className="h-10"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex gap-2 justify-end pt-3">
+              <Button
+                variant="outline"
+                onClick={() => setSelectedSaleToCancel(null)}
+                disabled={cancelSaleMutation.isPending}
+              >
+                Voltar
+              </Button>
+              <Button
+                className="bg-red-600 hover:bg-red-700 text-white font-semibold gap-1.5"
+                disabled={cancelSaleMutation.isPending}
+                onClick={() =>
+                  cancelSaleMutation.mutate({
+                    saleId: selectedSaleToCancel.id,
+                    reason: cancelReasonInput,
+                    items: selectedSaleToCancel.sale_items,
+                  })
+                }
+              >
+                {cancelSaleMutation.isPending ? "Cancelando..." : "Confirmar Cancelamento"}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
