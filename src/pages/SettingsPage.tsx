@@ -981,6 +981,33 @@ export default function SettingsPage() {
 
             <Separator />
 
+            {/* Configuração de Modo Fiscal / Não Fiscal */}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-emerald-600">Modelo do Cupom (Fiscal vs Não Fiscal)</h3>
+              <p className="text-sm text-muted-foreground">
+                Se desativado, o comprovante impresso será um <strong>Comprovante de Venda Não Fiscal</strong> simples (sem mensagens de contingência, sem dados fiscais zerados e sem QR Code da SEFAZ).
+              </p>
+              
+              <div className="flex items-center gap-2 mt-2">
+                <input 
+                  type="checkbox" 
+                  id="enableFiscal" 
+                  className="w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500"
+                  checked={localStorage.getItem("pdv_enable_fiscal") === "true"}
+                  onChange={(e) => {
+                    localStorage.setItem("pdv_enable_fiscal", e.target.checked ? "true" : "false");
+                    setNfe({ ...nfe });
+                    toast.success(e.target.checked ? "Emissão de Cupom Fiscal ativada!" : "Cupom Não Fiscal ativado!");
+                  }}
+                />
+                <Label htmlFor="enableFiscal" className="font-medium cursor-pointer">
+                  Habilitar emissão fiscal (NFC-e / SEFAZ no cupom)
+                </Label>
+              </div>
+            </div>
+
+            <Separator />
+
             <div className="space-y-3">
               <h3 className="font-semibold text-primary">Seleção de Impressoras (App Desktop)</h3>
               <p className="text-sm text-muted-foreground">

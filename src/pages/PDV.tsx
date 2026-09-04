@@ -81,6 +81,7 @@ const paymentLabel: Record<string, string> = {
 function Cupom({ ticket, printRef }: { ticket: SaleTicket; printRef: React.RefObject<HTMLDivElement> }) {
   const dateStr = ticket.createdAt.toLocaleString("pt-BR");
   const totalItems = ticket.items.reduce((s, i) => s + i.quantity, 0);
+  const isFiscalEnabled = localStorage.getItem("pdv_enable_fiscal") === "true" && !!ticket.nfceKey;
 
   return (
     <div
@@ -108,12 +109,16 @@ function Cupom({ ticket, printRef }: { ticket: SaleTicket; printRef: React.RefOb
         <p className="font-bold text-[12px] uppercase">{ticket.storeName}</p>
         {ticket.storeCnpj && (
           <p className="text-[10px] uppercase">
-            CNPJ: {ticket.storeCnpj} IE: {ticket.nfceKey ? "CONFERIR" : "000000000000"}
+            CNPJ: {ticket.storeCnpj} {isFiscalEnabled ? (ticket.nfceKey ? "IE: CONFERIR" : "IE: 000000000000") : ""}
           </p>
         )}
         {ticket.storeAddress && <p className="text-[10px] uppercase">{ticket.storeAddress}</p>}
         {ticket.storeCity && <p className="text-[10px] uppercase">{ticket.storeCity}</p>}
-        <p className="text-[10px] mt-1">Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica</p>
+        <p className="text-[10px] mt-1 font-semibold uppercase">
+          {isFiscalEnabled
+            ? "Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica"
+            : "Comprovante de Venda Não Fiscal"}
+        </p>
       </div>
 
       <div className="border-t border-dashed border-black my-1" />
@@ -183,51 +188,62 @@ function Cupom({ ticket, printRef }: { ticket: SaleTicket; printRef: React.RefOb
 
       <div className="border-t border-dashed border-black my-1" />
 
-      {/* 5. Tributos */}
-      <div className="text-[10px] space-y-0.5">
-        <div className="flex justify-between">
-          <span>Informação dos Tributos Totais</span>
-          <span>{(ticket.total * 0.12).toFixed(2).replace(".", ",")}</span>
-        </div>
-        <p>Incidentes (Lei Federal 12.741/2012)</p>
-      </div>
+      {/* 5. Tributos (Apenas se emitido com NFC-e) */}
+      {isFiscalEnabled && (
+        <>
+          <div className="text-[10px] space-y-0.5">
+            <div className="flex justify-between">
+              <span>Informação dos Tributos Totais</span>
+              <span>{(ticket.total * 0.12).toFixed(2).replace(".", ",")}</span>
+            </div>
+            <p>Incidentes (Lei Federal 12.741/2012)</p>
+          </div>
+          <div className="border-t border-dashed border-black my-1" />
+        </>
+      )}
 
-      <div className="border-t border-dashed border-black my-1" />
-
-      {/* 6. Operador */}
+      {/* 6. Operador e Consumidor */}
       <div className="text-center text-[10px] space-y-0.5 uppercase">
         <p>CX: CAIXA1 &nbsp;&nbsp;&nbsp; OP: {ticket.cashierName}</p>
-        <p className="font-bold text-[12px]">VND:{String(ticket.saleId?.slice(-4) ?? "0000")}</p>
+        <p className="font-bold text-[12px]">VND: {String(ticket.saleId?.slice(-4) ?? "0000")}</p>
         <p className="font-bold text-[12px]">SENHA: {String(ticket.senha).padStart(3, "0")}</p>
+        <p className="text-[9px] text-gray-700">{dateStr}</p>
       </div>
 
       <div className="border-t border-dashed border-black my-1" />
 
-      {/* 7. NFC-e Info */}
-      <div className="text-[9px] text-center space-y-1 mt-2">
-        <p>Consulte pela Chave de Acesso em</p>
-        <p>http://www.nfce.sefaz.gov.br/consulta</p>
-        <p className="break-all my-1">{ticket.nfceKey || "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"}</p>
-        <div className="my-1">
-          <p>CONSUMIDOR: {ticket.customerName ? `${ticket.customerName} ${ticket.customerPhone ? `- ${ticket.customerPhone}` : ""}` : "Consumidor não identificado"}</p>
-          {ticket.deliveryAddress && <p>ENDEREÇO: {ticket.deliveryAddress}</p>}
-          {ticket.deliveryNotes && <p>OBS: {ticket.deliveryNotes}</p>}
-        </div>
-        <p>NFC-e n°{String(ticket.saleId?.slice(-4) ?? "0000")} Serie:1 {dateStr} Via Consumidor</p>
-        <p className="font-bold uppercase mt-1">EMITIDA EM CONTINGÊNCIA</p>
-        <p className="font-bold uppercase mb-2">Pendente de autorização</p>
-        
-        <div className="flex justify-center mt-2 mb-2">
-          {ticket.nfceKey ? (
-            <div className="w-28 h-28 bg-gray-100 flex items-center justify-center text-[8px] border border-gray-300">
-              [QR CODE NFC-e]
-            </div>
-          ) : (
-            <QRCodeSVG value={"https://www.sefaz.gov.br"} size={110} level="M" />
-          )}
-        </div>
-        <p className="text-[8px] mt-2">Trib. Aprox.: {(ticket.total * 0.05).toFixed(2).replace(".", ",")} Fed, {(ticket.total * 0.07).toFixed(2).replace(".", ",")} Est, FONTE: IBPT</p>
+      <div className="text-[9px] text-center space-y-0.5 my-1">
+        <p>CONSUMIDOR: {ticket.customerName ? `${ticket.customerName} ${ticket.customerPhone ? `- ${ticket.customerPhone}` : ""}` : "Consumidor não identificado"}</p>
+        {ticket.deliveryAddress && <p>ENDEREÇO: {ticket.deliveryAddress}</p>}
+        {ticket.deliveryNotes && <p>OBS: {ticket.deliveryNotes}</p>}
       </div>
+
+      {/* 7. NFC-e Info (Apenas se emitido com chave real autorizada) */}
+      {isFiscalEnabled ? (
+        <div className="text-[9px] text-center space-y-1 mt-2">
+          <div className="border-t border-dashed border-black my-1" />
+          <p>Consulte pela Chave de Acesso em</p>
+          <p>http://www.nfce.sefaz.gov.br/consulta</p>
+          <p className="break-all my-1 font-mono">{ticket.nfceKey}</p>
+          <p>NFC-e n°{String(ticket.saleId?.slice(-4) ?? "0000")} Serie:1 {dateStr} Via Consumidor</p>
+          <p className="font-bold uppercase mt-1">EMITIDA EM CONTINGÊNCIA</p>
+          <p className="font-bold uppercase mb-2">Pendente de autorização</p>
+          
+          <div className="flex justify-center mt-2 mb-2">
+            {ticket.nfceUrl ? (
+              <QRCodeSVG value={ticket.nfceUrl} size={110} level="M" />
+            ) : (
+              <QRCodeSVG value={`https://www.sefaz.gov.br/nfce/qrcode?chNFe=${ticket.nfceKey}`} size={110} level="M" />
+            )}
+          </div>
+          <p className="text-[8px] mt-2">Trib. Aprox.: {(ticket.total * 0.05).toFixed(2).replace(".", ",")} Fed, {(ticket.total * 0.07).toFixed(2).replace(".", ",")} Est, FONTE: IBPT</p>
+        </div>
+      ) : (
+        <div className="text-[9px] text-center space-y-0.5 mt-2 text-gray-700">
+          <p className="font-semibold">*** OBRIGADO PELA PREFERÊNCIA! ***</p>
+          <p>Documento auxiliar de conferência de pedido.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -464,9 +480,11 @@ function CupomModal({
 
         {/* Ações */}
         <div className="flex gap-2 pt-1 flex-wrap">
-          <Button onClick={handleEmitNFe} disabled={emittingNfe} className="flex-1 min-w-[120px] gap-2 bg-blue-600 hover:bg-blue-700 text-white">
-            {emittingNfe ? "Gerando NF-e..." : "Emitir NF-e (Asaas)"}
-          </Button>
+          {localStorage.getItem("pdv_enable_fiscal") === "true" && (
+            <Button onClick={handleEmitNFe} disabled={emittingNfe} className="flex-1 min-w-[120px] gap-2 bg-blue-600 hover:bg-blue-700 text-white">
+              {emittingNfe ? "Gerando NF-e..." : "Emitir NF-e (Asaas)"}
+            </Button>
+          )}
           <Button onClick={handlePrint} className="flex-1 min-w-[120px] gap-2 bg-gray-900 hover:bg-gray-700">
             <Printer className="h-4 w-4" />
             Imprimir Cupom
