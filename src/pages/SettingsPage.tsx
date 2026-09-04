@@ -16,8 +16,9 @@ import {
   FileText, Save, ExternalLink as ExtLink, Shield, Radio, Printer,
   CheckCircle2, Star, Clock, ShoppingBag, Receipt, Percent, LayoutGrid,
   Lock, KeyRound, ShieldCheck, Users2, DollarSign, Trash2,
+  Volume2, VolumeX, Volume1, Play,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getSoundConfig, saveSoundConfig, playNotificationSound, SOUND_OPTIONS, type SoundConfig } from "@/lib/utils";
 import {
   SEFAZ_BY_UF, UF_NAMES, SERVICO_LABELS,
   type SefazServico,
@@ -63,7 +64,7 @@ function maskCnpj(v: string) {
 export default function SettingsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "assinatura" | "ifood" | "asaas" | "impressora" | "pdv" | "vendedoras" | "mesas" | "seguranca">("links");
+  const [activeTab, setActiveTab] = useState<"links" | "integracoes" | "assinatura" | "ifood" | "asaas" | "impressora" | "pdv" | "sons" | "vendedoras" | "mesas" | "seguranca">("links");
   const [sefazServico, setSefazServico] = useState<SefazServico>("NFeAutorizacao");
   const [showToken, setShowToken] = useState(false);
   const [nfe, setNfe] = useState<NfeConfig>({});
@@ -76,6 +77,27 @@ export default function SettingsPage() {
   const [adminPassword, setAdminPassword] = useState(() => localStorage.getItem("pdv_admin_password") || "");
   const [editAdminPassword, setEditAdminPassword] = useState("");
   const [confirmEditAdminPassword, setConfirmEditAdminPassword] = useState("");
+
+  // ── Sons & Notificações ───────────────────────────────────────────────────
+  const [soundConfig, setSoundConfig] = useState<SoundConfig>(() => getSoundConfig());
+  const [soundTesting, setSoundTesting] = useState(false);
+
+  const updateSound = (partial: Partial<SoundConfig>) => {
+    const updated = { ...soundConfig, ...partial };
+    setSoundConfig(updated);
+    saveSoundConfig(partial);
+  };
+
+  const testSound = async (type?: string, vol?: number) => {
+    setSoundTesting(true);
+    const played = await playNotificationSound(type || soundConfig.soundType, vol !== undefined ? vol : soundConfig.volume);
+    setSoundTesting(false);
+    if (played) {
+      toast.success("🔊 Som reproduzido com sucesso!");
+    } else {
+      toast.error("⚠️ Não foi possível reproduzir o som. Verifique o volume ou clique na página para habilitar áudio.");
+    }
+  };
 
   // ── Vendedoras ────────────────────────────────────────────────────────────────
   const [sellers, setSellers] = useState<{ name: string; commission: number }[]>(() =>
@@ -448,7 +470,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Grade de Ícones (Tabs) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-10 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-11 gap-3">
         {([
           { id: "links",       label: "Links",       icon: Link2 },
           { id: "integracoes", label: "Integrações", icon: Radio },
@@ -457,6 +479,7 @@ export default function SettingsPage() {
           { id: "assinatura",  label: "Assinatura",  icon: Star },
           { id: "impressora",  label: "Impressora",  icon: Printer },
           { id: "pdv",         label: "PDV",         icon: ShoppingCart },
+          { id: "sons",        label: "Sons/Alertas", icon: Volume2 },
           { id: "vendedoras",  label: "Vendedoras",  icon: Users2 },
           { id: "mesas",       label: "Mesas",       icon: LayoutGrid },
           { id: "seguranca",   label: "Permissões",  icon: ShieldCheck },
@@ -1123,6 +1146,161 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* ── ABA: SONS E ALERTAS ────────────────────────────────────────── */}
+      {activeTab === "sons" && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Volume2 className="h-5 w-5 text-blue-600" />
+                Configurações de Sons e Alertas
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Ajuste os alertas sonoros para novos pedidos recebidos e mensagens do chat com clientes.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* 1. Ativar / Silenciar */}
+              <div className="flex items-center justify-between p-4 border rounded-xl bg-slate-50">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    {soundConfig.enabled ? (
+                      <Volume2 className="h-5 w-5 text-emerald-600" />
+                    ) : (
+                      <VolumeX className="h-5 w-5 text-rose-600" />
+                    )}
+                    <span className="font-semibold text-sm">
+                      {soundConfig.enabled ? "Sons Ativados" : "Sons Silenciados / Mudo"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Quando desativado, nenhum alerta sonoro tocará ao receber pedidos ou mensagens.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !soundConfig.enabled;
+                    updateSound({ enabled: next });
+                    toast.success(next ? "🔊 Sons ativados!" : "🔇 Sons silenciados!");
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    soundConfig.enabled ? "bg-emerald-600" : "bg-gray-300"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                      soundConfig.enabled ? "translate-x-6" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* 2. Seleção do Toque / Som */}
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold flex items-center gap-2">
+                  <span>Toque da Notificação</span>
+                </Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {SOUND_OPTIONS.map((s) => {
+                    const isSelected = soundConfig.soundType === s.id;
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => {
+                          updateSound({ soundType: s.id as any });
+                          testSound(s.id);
+                        }}
+                        className={cn(
+                          "flex items-center justify-between p-3.5 rounded-xl border-2 cursor-pointer transition-all",
+                          isSelected
+                            ? "border-blue-600 bg-blue-50/50 shadow-sm"
+                            : "border-slate-200 hover:border-slate-300 bg-white"
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className={cn(
+                              "w-4 h-4 rounded-full border flex items-center justify-center",
+                              isSelected ? "border-blue-600" : "border-slate-400"
+                            )}
+                          >
+                            {isSelected && <div className="w-2 h-2 rounded-full bg-blue-600" />}
+                          </div>
+                          <span className={cn("text-xs font-medium", isSelected && "font-bold text-blue-900")}>
+                            {s.name}
+                          </span>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs gap-1 text-blue-600 hover:bg-blue-100"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            testSound(s.id);
+                          }}
+                        >
+                          <Play className="h-3 w-3" /> Ouvir
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. Controle de Volume */}
+              <div className="space-y-3 p-4 border rounded-xl bg-white">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold flex items-center gap-2">
+                    <Volume1 className="h-4 w-4 text-blue-600" />
+                    <span>Volume do Som</span>
+                  </Label>
+                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                    {Math.round(soundConfig.volume * 100)}%
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <VolumeX className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={soundConfig.volume}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      updateSound({ volume: v });
+                    }}
+                    onMouseUp={() => testSound()}
+                    onTouchEnd={() => testSound()}
+                    className="w-full accent-blue-600 cursor-pointer h-2 bg-slate-200 rounded-lg appearance-none"
+                  />
+                  <Volume2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                </div>
+              </div>
+
+              {/* 4. Botão de Teste Completo */}
+              <div className="pt-2 flex flex-col sm:flex-row gap-3 items-center justify-between border-t">
+                <p className="text-xs text-muted-foreground">
+                  💡 Clique no botão de teste para garantir que o áudio do seu computador ou caixa de som está funcionando.
+                </p>
+                <Button
+                  type="button"
+                  onClick={() => testSound()}
+                  disabled={soundTesting}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold gap-2 w-full sm:w-auto"
+                >
+                  <Volume2 className="h-4 w-4" />
+                  {soundTesting ? "Reproduzindo..." : "Testar Som Agora"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* ── ABA: VENDEDORAS & RELATÓRIO DE COMISSÕES ────────────────────── */}

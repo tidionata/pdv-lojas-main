@@ -10,9 +10,9 @@ import {
   Clock, CheckCircle2, ChefHat, PackageCheck, XCircle,
   MessageSquare, Send, User, Phone, ChevronDown, ChevronUp,
   ShoppingBag, Bell, RefreshCw, LayoutList, LayoutGrid, Maximize2,
-  Printer, FileText,
+  Printer, FileText, Volume2, VolumeX,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, playNotificationSound, getSoundConfig, saveSoundConfig } from "@/lib/utils";
 import { isElectron, printToKitchen, buildKitchenReceiptHtml } from "@/lib/electronPrinting";
 
 interface Order {
@@ -652,6 +652,19 @@ export default function Pedidos() {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<string>("active");
   const [layout, setLayout] = useState<"list" | "grid" | "compact">("list");
+  const [soundEnabled, setSoundEnabled] = useState(() => getSoundConfig().enabled);
+
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    saveSoundConfig({ enabled: next });
+    if (next) {
+      playNotificationSound();
+      toast.success("🔊 Alertas sonoros ativados!");
+    } else {
+      toast.info("🔇 Alertas sonoros silenciados!");
+    }
+  };
 
   // Pegar storeId do usuário
   const { data: profile } = useQuery({
@@ -722,10 +735,7 @@ export default function Pedidos() {
         }, () => {
           queryClient.invalidateQueries({ queryKey: ["store-orders", storeId] });
           toast("🔔 Novo pedido recebido!", { duration: 4000 });
-          try {
-            const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
-            audio.play().catch(() => {});
-          } catch {}
+          playNotificationSound();
         })
         .on("postgres_changes", {
           event: "INSERT", schema: "public", table: "order_messages",
@@ -736,10 +746,7 @@ export default function Pedidos() {
             toast.info(`💬 Nova mensagem do cliente (${payload.new.sender_name || 'Cliente'}): "${payload.new.message}"`, {
               duration: 5000,
             });
-            try {
-              const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
-              audio.play().catch(() => {});
-            } catch {}
+            playNotificationSound();
           }
         })
         .subscribe();
@@ -811,6 +818,16 @@ export default function Pedidos() {
               <Maximize2 className="h-4 w-4 rotate-45" title="Compacto" />
             </button>
           </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={toggleSound} 
+            title={soundEnabled ? "Silenciar notificações de som" : "Ativar notificações de som"}
+            className={cn("gap-1.5", soundEnabled ? "text-emerald-600 border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100" : "text-muted-foreground")}
+          >
+            {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4 text-rose-500" />}
+            <span className="hidden sm:inline">{soundEnabled ? "Som Ativo" : "Silenciado"}</span>
+          </Button>
           <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5">
             <RefreshCw className="h-4 w-4" /> Atualizar
           </Button>

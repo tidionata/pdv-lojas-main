@@ -9,6 +9,7 @@ import {
   Clock, CheckCircle2, ChefHat, PackageCheck, Truck,
   XCircle, Send, MessageSquare, ShoppingBag, User,
 } from "lucide-react";
+import { playNotificationSound } from "@/lib/utils";
 
 interface Order {
   id: string;
@@ -153,10 +154,7 @@ export default function PedidoStatus() {
         }, (payload: any) => {
           queryClient.invalidateQueries({ queryKey: ["order-messages", orderId] });
           if (payload?.new?.sender === "store") {
-            try {
-              const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
-              audio.play().catch(() => {});
-            } catch {}
+            playNotificationSound();
           }
         })
         .on("broadcast", { event: "new_message" }, (payload: any) => {
