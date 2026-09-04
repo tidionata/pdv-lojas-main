@@ -1885,7 +1885,7 @@ export default function PDV({ isDeliveryMode = false }: { isDeliveryMode?: boole
 
       {/* ═══ Modal: Confirmação e Motivo do Cancelamento ═══ */}
       {selectedSaleToCancel && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b pb-3">
               <div className="flex items-center gap-2 text-red-600 font-bold text-lg">
