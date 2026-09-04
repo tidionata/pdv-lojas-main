@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { ClienteFormModal } from "@/components/Clientes/ClienteFormModal";
 import { ClienteHistoricoModal } from "@/components/Clientes/ClienteHistoricoModal";
 import { toast } from "sonner";
+import { formatPhoneDisplay } from "@/lib/utils";
 
 export default function Clientes() {
   const { session } = useAuth();
@@ -158,7 +159,7 @@ export default function Clientes() {
                         </div>
                         
                         <p className="text-sm text-muted-foreground mb-1">
-                          📞 {customer.phone || "Sem telefone"}
+                          📞 {formatPhoneDisplay(customer.phone)}
                         </p>
                         
                         {customer.address && (

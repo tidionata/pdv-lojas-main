@@ -14,6 +14,7 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
+import { maskPhone, formatPhoneDisplay } from "@/lib/utils";
 
 type Product = Tables<"products">;
 
@@ -616,7 +617,7 @@ export default function Cardapio() {
                        <Phone className="h-4 w-4" /> WhatsApp <span className="text-red-500">*</span>
                      </label>
                      <Input placeholder="(11) 99999-9999" value={customerPhone} required
-                       onChange={e => setCustomerPhone(e.target.value)} />
+                       onChange={e => setCustomerPhone(maskPhone(e.target.value))} />
                    </div>
 
                   {/* Tipo de Entrega */}
@@ -901,7 +902,7 @@ export default function Cardapio() {
                     <Input
                       placeholder="(11) 99999-9999"
                       value={authPhone}
-                      onChange={e => setAuthPhone(e.target.value)}
+                      onChange={e => setAuthPhone(maskPhone(e.target.value))}
                       className="h-10"
                       autoFocus
                     />
@@ -914,40 +915,48 @@ export default function Cardapio() {
                         return;
                       }
                       const cleanPhone = authPhone.replace(/\D/g, "");
+                      let found: any = null;
+
+                      // 1. Tenta Supabase
                       try {
-                        // Busca cliente no Supabase
-                        const { data: found } = await (supabase as any)
+                        const { data } = await (supabase as any)
                           .from("customers")
                           .select("*")
-                          .eq("store_id", storeId)
-                          .ilike("phone", `%${cleanPhone || authPhone.trim()}%`)
-                          .maybeSingle();
-
-                        if (found) {
-                          const session = {
-                            name: found.name,
-                            phone: found.phone || authPhone.trim(),
-                            address: found.address || "",
-                          };
-                          setLoggedCustomer(session);
-                          localStorage.setItem(`customer_session_${storeId}`, JSON.stringify(session));
-                          toast.success(`Bem-vindo(a) de volta, ${found.name.split(" ")[0]}!`);
-                          setAuthModalOpen(false);
-                          setAuthPhone("");
-                        } else {
-                          toast.info("Não encontramos seu cadastro. Preencha seus dados para cadastrar!");
-                          setAuthMode("register");
+                          .eq("store_id", storeId);
+                        
+                        if (data && data.length > 0) {
+                          found = data.find((c: any) => {
+                            const cPhone = (c.phone || "").replace(/\D/g, "");
+                            return cPhone && (cPhone === cleanPhone || cPhone.includes(cleanPhone) || cleanPhone.includes(cPhone));
+                          });
                         }
-                      } catch {
-                        // Modo offline / sem tabela: cria sessão direta
+                      } catch (err) {
+                        console.warn("Erro ao buscar no Supabase:", err);
+                      }
+
+                      // 2. Fallback offline em localStorage
+                      if (!found) {
+                        const localList: any[] = JSON.parse(localStorage.getItem(`customers_local_${storeId}`) || "[]");
+                        found = localList.find((c: any) => {
+                          const cPhone = (c.phone || "").replace(/\D/g, "");
+                          return cPhone && (cPhone === cleanPhone || cPhone.includes(cleanPhone) || cleanPhone.includes(cPhone));
+                        });
+                      }
+
+                      if (found) {
                         const session = {
-                          name: authPhone.trim(),
-                          phone: authPhone.trim(),
+                          name: found.name,
+                          phone: found.phone || authPhone.trim(),
+                          address: found.address || "",
                         };
                         setLoggedCustomer(session);
                         localStorage.setItem(`customer_session_${storeId}`, JSON.stringify(session));
-                        toast.success("Entrou com sucesso!");
+                        toast.success(`Bem-vindo(a) de volta, ${found.name.split(" ")[0]}!`);
                         setAuthModalOpen(false);
+                        setAuthPhone("");
+                      } else {
+                        toast.info("Não encontramos seu cadastro. Preencha seus dados para cadastrar!");
+                        setAuthMode("register");
                       }
                     }}
                   >
@@ -984,7 +993,7 @@ export default function Cardapio() {
                     <Input
                       placeholder="(11) 99999-9999"
                       value={authPhone}
-                      onChange={e => setAuthPhone(e.target.value)}
+                      onChange={e => setAuthPhone(maskPhone(e.target.value))}
                       className="h-9"
                     />
                   </div>
