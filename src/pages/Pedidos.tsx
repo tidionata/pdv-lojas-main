@@ -336,23 +336,34 @@ function OrderCard({ order, storeId, compact, storeName }: { order: Order; store
         message: msg,
         created_at: new Date().toISOString(),
       };
+      
       try {
-        // Verifica o erro retornado (Supabase não joga exceção quando offline)
         const { error } = await (supabase as any).from("order_messages").insert({
-          order_id: order.id, sender: "store", sender_name: "Loja", message: msg,
+          order_id: order.id, 
+          sender: "store", 
+          sender_name: "Loja", 
+          message: msg,
         });
-        if (error) throw new Error(error.message ?? "offline");
-      } catch {
-        // Fallback offline: salva em localStorage e atualiza cache local
-        const existing = JSON.parse(localStorage.getItem(`order_messages_${order.id}`) || "[]");
-        localStorage.setItem(`order_messages_${order.id}`, JSON.stringify([...existing, newMsg]));
-        queryClient.setQueryData<OrderMessage[]>(["order-messages", order.id],
-          old => [...(old ?? []), newMsg]);
+        if (!error) {
+          // Broadcast para o cliente receber sem atraso
+          supabase.channel(`order-channel-${order.id}`).send({
+            type: "broadcast",
+            event: "new_message",
+            payload: { order_id: order.id, message: msg, sender: "store" },
+          }).catch(() => {});
+        }
+      } catch (e) {
+        console.warn("Supabase offline ao enviar mensagem da loja:", e);
       }
+
+      // Atualiza cache local imediatamente
+      const existing = JSON.parse(localStorage.getItem(`order_messages_${order.id}`) || "[]");
+      localStorage.setItem(`order_messages_${order.id}`, JSON.stringify([...existing, newMsg]));
+      queryClient.setQueryData<OrderMessage[]>(["order-messages", order.id],
+        old => [...(old ?? []), newMsg]);
     },
     onSuccess: () => {
       setMessage("");
-      // Não invalida para não sobrescrever o cache já atualizado offline
     },
   });
 
@@ -700,19 +711,39 @@ export default function Pedidos() {
     },
   });
 
-  // Realtime: novos pedidos
+  // Realtime: novos pedidos e mensagens de clientes
   useEffect(() => {
     if (!storeId) return;
     try {
       const channel = supabase
-        .channel(`store-orders-${storeId}`)
+        .channel(`store-orders-global-${storeId}`)
         .on("postgres_changes", {
           event: "*", schema: "public", table: "orders", filter: `store_id=eq.${storeId}`,
         }, () => {
           queryClient.invalidateQueries({ queryKey: ["store-orders", storeId] });
           toast("🔔 Novo pedido recebido!", { duration: 4000 });
+          try {
+            const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
+            audio.play().catch(() => {});
+          } catch {}
+        })
+        .on("postgres_changes", {
+          event: "INSERT", schema: "public", table: "order_messages",
+        }, (payload: any) => {
+          if (payload?.new?.sender === "customer") {
+            const orderId = payload.new.order_id;
+            queryClient.invalidateQueries({ queryKey: ["order-messages", orderId] });
+            toast.info(`💬 Nova mensagem do cliente (${payload.new.sender_name || 'Cliente'}): "${payload.new.message}"`, {
+              duration: 5000,
+            });
+            try {
+              const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
+              audio.play().catch(() => {});
+            } catch {}
+          }
         })
         .subscribe();
+
       return () => { supabase.removeChannel(channel); };
     } catch { /* offline */ }
   }, [storeId, queryClient]);

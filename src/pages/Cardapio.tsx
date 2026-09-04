@@ -274,8 +274,11 @@ export default function Cardapio() {
         return order.id as string;
       } catch (err) {
         console.warn("Erro ao salvar online no Supabase, salvando offline:", err);
-        // fallback offline: salva em localStorage
-        const orderId = `order-local-${Date.now()}`;
+        // fallback offline: salva em localStorage com UUID seguro (imprevisível)
+        const safeId = typeof crypto !== 'undefined' && crypto.randomUUID 
+          ? `ord-${crypto.randomUUID()}` 
+          : `ord-${Math.random().toString(36).substring(2, 10)}${Date.now().toString(36)}`;
+        const orderId = safeId;
         const order = {
           id: orderId,
           store_id: storeId,
