@@ -72,10 +72,25 @@ function CupomModal({
         w.document.write(`
       <html><head><title>Cupom</title>
       <style>
-        @page { size: 80mm auto; margin: 0; }
-        body { margin: 0; padding: 8px; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3; color: #000; }
+        @page { size: 80mm auto; margin: 0mm; }
+        *, *::before, *::after { box-sizing: border-box !important; color: #000000 !important; }
+        html, body { 
+          margin: 0 auto !important; 
+          padding: 0 !important; 
+          width: 100% !important;
+          max-width: 72mm !important;
+          font-family: 'Courier New', Courier, monospace !important; 
+          font-size: 10px !important; 
+          line-height: 1.25 !important; 
+          color: #000 !important; 
+          background: #fff !important;
+        }
       </style></head>
-      <body>${content.innerHTML}</body></html>
+      <body>
+        <div style="width: 100%; max-width: 72mm; margin: 0 auto; padding: 2px 4px;">
+          ${content.innerHTML}
+        </div>
+      </body></html>
     `);
         w.document.close();
         w.focus();

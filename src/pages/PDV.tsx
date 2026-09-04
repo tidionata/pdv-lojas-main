@@ -303,24 +303,28 @@ function CupomModal({
         <head>
           <title>Cupom Fiscal</title>
           <style>
-            @page { margin: 0; }
-            body { 
-              margin: 0 auto; 
-              padding: 2mm 0; 
-              width: 100%; 
-              max-width: 100%;
-              font-family: 'Courier New', Courier, monospace; 
-              font-size: 11px; 
-              line-height: 1.3; 
-              color: #000000; 
-              background: #ffffff;
-              font-weight: 600;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-              -webkit-font-smoothing: none;
-              text-rendering: optimizeLegibility;
+            @page { 
+              size: 80mm auto; 
+              margin: 0mm; 
             }
-            * { box-sizing: border-box; color: #000000 !important; }
+            *, *::before, *::after {
+              box-sizing: border-box !important;
+              color: #000000 !important;
+            }
+            html, body { 
+              margin: 0 auto !important; 
+              padding: 0 !important; 
+              width: 100% !important; 
+              max-width: 72mm !important;
+              font-family: 'Courier New', Courier, monospace !important; 
+              font-size: 10px !important; 
+              line-height: 1.25 !important; 
+              color: #000000 !important; 
+              background: #ffffff !important;
+              font-weight: 600 !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
             
             .flex { display: flex; }
             .flex-col { flex-direction: column; }
@@ -332,59 +336,58 @@ function CupomModal({
             .text-right { text-align: right; }
             .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
             
-            .p-2 { padding: 8px; }
-            .p-4 { padding: 16px; }
-            .pl-1 { padding-left: 4px; }
-            .pl-8 { padding-left: 32px; }
-            .pr-1 { padding-right: 4px; }
-            .pb-1 { padding-bottom: 4px; }
-            .pt-1 { padding-top: 4px; }
-            .ml-2 { margin-left: 8px; }
+            .p-2 { padding: 4px; }
+            .p-4 { padding: 8px; }
+            .pl-1 { padding-left: 2px; }
+            .pl-8 { padding-left: 16px; }
+            .pr-1 { padding-right: 2px; }
+            .pb-1 { padding-bottom: 2px; }
+            .pt-1 { padding-top: 2px; }
+            .ml-2 { margin-left: 4px; }
             .m-0 { margin: 0; }
             .mb-0\\.5 { margin-bottom: 2px; }
-            .mb-1 { margin-bottom: 4px; }
-            .mb-1\\.5 { margin-bottom: 6px; }
-            .mb-2 { margin-bottom: 8px; }
-            .mb-3 { margin-bottom: 12px; }
-            .mt-1 { margin-top: 4px; }
-            .mt-2 { margin-top: 8px; }
-            .my-1 { margin-top: 4px; margin-bottom: 4px; }
-            .my-2 { margin-top: 8px; margin-bottom: 8px; }
+            .mb-1 { margin-bottom: 3px; }
+            .mb-1\\.5 { margin-bottom: 4px; }
+            .mb-2 { margin-bottom: 6px; }
+            .mb-3 { margin-bottom: 8px; }
+            .mt-1 { margin-top: 3px; }
+            .mt-2 { margin-top: 6px; }
+            .my-1 { margin-top: 3px; margin-bottom: 3px; }
+            .my-2 { margin-top: 6px; margin-bottom: 6px; }
             .mx-auto { margin-left: auto; margin-right: auto; }
             .space-y-0\\.5 > * + * { margin-top: 2px; }
-            .space-y-1 > * + * { margin-top: 4px; }
+            .space-y-1 > * + * { margin-top: 3px; }
             
-            .w-8 { width: 32px; }
-            .w-10 { width: 40px; }
-            .w-12 { width: 48px; }
-            .w-16 { width: 64px; }
-            .w-24 { width: 96px; }
-            .w-28 { width: 112px; }
-            .w-\\[320px\\] { width: 320px; max-width: 100%; }
-            .w-full { width: 100%; }
-            .w-\\[20\\%\\] { width: 20%; }
-            .w-\\[30\\%\\] { width: 30%; }
+            .w-8 { width: 24px; }
+            .w-10 { width: 32px; }
+            .w-12 { width: 40px; }
+            .w-16 { width: 52px; }
+            .w-24 { width: 75px; }
+            .w-28 { width: 90px; }
+            .w-full { width: 100% !important; max-width: 100% !important; }
+            .w-\\[20\\%\\] { width: 18%; }
+            .w-\\[30\\%\\] { width: 32%; }
             .w-\\[40\\%\\] { width: 40%; }
-            .h-24 { height: 96px; }
-            .h-28 { height: 112px; }
+            .h-24 { height: 80px; }
+            .h-28 { height: 90px; }
             .flex-1 { flex: 1 1 0%; }
             
-            .text-\\[8px\\] { font-size: 8px; line-height: 10px; }
-            .text-\\[9px\\] { font-size: 9px; line-height: 12px; }
-            .text-\\[10px\\] { font-size: 10px; line-height: 14px; }
-            .text-\\[11px\\] { font-size: 11px; line-height: 16px; }
-            .text-\\[12px\\] { font-size: 12px; line-height: 16px; }
-            .text-\\[13px\\] { font-size: 13px; line-height: 18px; }
-            .text-\\[15px\\] { font-size: 15px; line-height: 20px; }
-            .text-\\[16px\\] { font-size: 16px; line-height: 24px; }
+            .text-\\[8px\\] { font-size: 8px !important; line-height: 10px !important; }
+            .text-\\[9px\\] { font-size: 8.5px !important; line-height: 11px !important; }
+            .text-\\[10px\\] { font-size: 9.5px !important; line-height: 12px !important; }
+            .text-\\[11px\\] { font-size: 10px !important; line-height: 13px !important; }
+            .text-\\[12px\\] { font-size: 11px !important; line-height: 14px !important; }
+            .text-\\[13px\\] { font-size: 11.5px !important; line-height: 15px !important; }
+            .text-\\[15px\\] { font-size: 13px !important; line-height: 16px !important; }
+            .text-\\[16px\\] { font-size: 14px !important; line-height: 18px !important; }
             .font-bold { font-weight: 800 !important; }
             .font-semibold { font-weight: 700 !important; }
             .font-medium { font-weight: 600 !important; }
             .font-normal { font-weight: 400 !important; }
-            .font-mono { font-family: 'Courier New', Courier, monospace; }
+            .font-mono { font-family: 'Courier New', Courier, monospace !important; }
             .uppercase { text-transform: uppercase; }
-            .tracking-widest { letter-spacing: 0.1em; }
-            .leading-tight { line-height: 1.25; }
+            .tracking-widest { letter-spacing: 0.05em; }
+            .leading-tight { line-height: 1.2; }
             .break-all { word-break: break-all; }
             
             .border { border: 1px solid #000 !important; }
@@ -395,17 +398,23 @@ function CupomModal({
             .rounded-sm { border-radius: 2px; }
             .bg-white { background-color: #fff; }
             
-            table { width: 100%; table-layout: fixed; }
+            table { width: 100% !important; table-layout: fixed; }
             .border-collapse { border-collapse: collapse; }
-            th, td { word-wrap: break-word; }
-            /* Remover tons de cinza que causam pontilhado/apagado na térmica */
+            th, td { word-wrap: break-word; overflow: hidden; }
+            
+            svg { max-width: 100px !important; max-height: 100px !important; height: auto !important; }
+            
             .text-gray-700, .bg-gray-100, .border-gray-300 { 
               color: #000000 !important; 
               border-color: #000000 !important; 
             }
           </style>
         </head>
-        <body>${content.innerHTML}</body>
+        <body>
+          <div style="width: 100%; max-width: 72mm; margin: 0 auto; padding: 2px 4px;">
+            ${content.innerHTML}
+          </div>
+        </body>
       </html>
     `;
 
