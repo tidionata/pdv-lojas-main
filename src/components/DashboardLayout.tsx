@@ -156,7 +156,15 @@ export default function DashboardLayout() {
     },
   });
 
+  const userRole = sessionStorage.getItem("pdv_user_role");
+  const isFuncionario = userRole === "funcionario";
+
   const isTabRestricted = (tabKey: string) => {
+    if (isFuncionario) {
+      // Funcionário só pode acessar PDV, Pedidos e Clientes
+      const allowed = ["pdv", "pedidos", "clientes"];
+      return !allowed.includes(tabKey);
+    }
     // Só bloqueia abas se o lojista tiver realmente criado uma senha master
     if (!savedAdminPassword) return false;
     if (tabKey === "settings") return true;
@@ -176,6 +184,10 @@ export default function DashboardLayout() {
     ...(storeConfig?.config_orcamento ? [{ to: "/dashboard/orcamentos", icon: FileText, label: "Orçamentos", visKey: null, tabKey: "orcamentos" }] : []),
     { to: "/dashboard/settings", icon: Settings,        label: "Configurações", visKey: null,                 tabKey: "settings" },
   ].filter((item) => {
+    if (isFuncionario) {
+      const allowed = ["pdv", "pedidos", "clientes"];
+      return allowed.includes(item.tabKey);
+    }
     const restricted = isTabRestricted(item.tabKey);
     const hideWhenLocked = localStorage.getItem(`hide_when_locked_${item.tabKey}`) === "true";
     if (restricted && hideWhenLocked && !isUnlocked) return false;
@@ -183,6 +195,12 @@ export default function DashboardLayout() {
     const stored = localStorage.getItem(item.visKey);
     return stored === null ? true : stored === "true";
   });
+
+  const handleSwitchProfile = () => {
+    sessionStorage.removeItem("pdv_user_role");
+    sessionStorage.removeItem("pdv_admin_unlocked");
+    navigate("/auth");
+  };
 
   const storeId = profile?.store_id ?? user?.id ?? "";
   const { data: pendingOrders = [] } = useQuery({
@@ -261,13 +279,22 @@ export default function DashboardLayout() {
             </div>
           )}
 
-          <div className="mt-2 pt-2 border-t border-sidebar-border/40">
+          <div className="mt-2 pt-2 border-t border-sidebar-border/40 space-y-1">
+            <button
+              onClick={handleSwitchProfile}
+              className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-xs font-medium transition-colors text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              title="Trocar entre Dono e Funcionário"
+            >
+              <Users className="h-4 w-4" />
+              <span>Trocar Perfil {isFuncionario ? "(Operador)" : "(Dono)"}</span>
+            </button>
+
             <button
               onClick={signOut}
               className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-red-400"
             >
               <LogOut className="h-5 w-5" />
-              Sair
+              Sair da Conta
             </button>
           </div>
         </nav>
