@@ -445,20 +445,20 @@ export default function Products() {
                       </TableCell>
                       <TableCell className="font-medium">
                         <div>
-                          {p.name}
-                          {p.barcode && <span className="block text-xs text-muted-foreground font-mono">{p.barcode}</span>}
+                          <span>{p.name}</span>
+                          {p.barcode ? <span className="block text-xs text-muted-foreground font-mono">{p.barcode}</span> : null}
                           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                          {(p as any).unit && (p as any).unit !== "UN" && (
+                          {(p as any).unit && (p as any).unit !== "UN" ? (
                             <Badge variant="outline" className="mt-1 text-[10px] px-1 py-0 h-4">Vend. {(p as any).unit}</Badge>
-                          )}
+                          ) : null}
                         </div>
                       </TableCell>
 
                       <TableCell className="hidden sm:table-cell">
                         {p.category ? <Badge variant="secondary">{p.category}</Badge> : <span className="text-muted-foreground text-xs">—</span>}
                       </TableCell>
-                      <TableCell className="text-right">{fmt(p.cost)}</TableCell>
-                      <TableCell className="text-right font-semibold">{fmt(p.price)}</TableCell>
+                      <TableCell className="text-right"><span>{fmt(p.cost)}</span></TableCell>
+                      <TableCell className="text-right font-semibold"><span>{fmt(p.price)}</span></TableCell>
                       <TableCell className="text-right hidden md:table-cell">
                         <span className={p.stock_display <= p.min_display_stock && p.stock_display > 0 ? "text-amber-600 font-semibold" : p.stock_display === 0 ? "text-red-500 font-semibold" : ""}>
                           {p.stock_display}
@@ -474,7 +474,7 @@ export default function Products() {
                         ) : <span className="text-muted-foreground text-xs">—</span>}
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge variant={p.active ? "default" : "secondary"}>{p.active ? "Ativo" : "Inativo"}</Badge>
+                        <Badge variant={p.active ? "default" : "secondary"}><span>{p.active ? "Ativo" : "Inativo"}</span></Badge>
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
